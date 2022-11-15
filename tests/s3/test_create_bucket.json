@@ -1,0 +1,164 @@
+{
+  "CreateBucketPlain": [
+    {
+      "operation": "PrepareBucket"
+    },
+    {
+      "clientName": "admin",
+      "operation": "DeleteBucket",
+      "parameters": {
+        "Bucket": "${Bucket}"
+      }
+    },
+    {
+      "clientName": "admin",
+      "operation": "CreateBucket",
+      "parameters": {
+        "Bucket": "${Bucket}",
+        "CreateBucketConfiguration": {
+          "LocationConstraint": "${region_name}"
+        }
+      },
+      "assertion": {
+        "ResponseMetadata.HTTPStatusCode": 200
+      }
+    },
+    {
+      "clientName": "admin",
+      "operation": "GetBucketOwnershipControls",
+      "parameters": {
+        "Bucket": "${Bucket}"
+      },
+      "assertion": {
+        "ResponseMetadata.HTTPStatusCode": 404,
+        "Error.Code": "OwnershipControlsNotFoundError"
+      }
+    },
+    {
+      "clientName": "admin",
+      "operation": "GetBucketAcl",
+      "parameters": {
+        "Bucket": "${Bucket}"
+      },
+      "assertion": {
+        "ResponseMetadata.HTTPStatusCode": 200,
+        "Owner": {
+          "ID": "${account_id}"
+        },
+        "Grants": [
+          {
+            "Grantee": {
+              "ID": "${account_id}",
+              "Type": "CanonicalUser"
+            },
+            "Permission": "FULL_CONTROL"
+          }
+        ]
+      }
+    }
+  ],
+  "CreateBucketAlreadyExists": [
+    {
+      "operation": "PrepareBucket"
+    },
+    {
+      "clientName": "admin",
+      "operation": "DeleteBucket",
+      "parameters": {
+        "Bucket": "${Bucket}"
+      }
+    },
+    {
+      "clientName": "admin",
+      "operation": "CreateBucket",
+      "parameters": {
+        "Bucket": "${Bucket}",
+        "CreateBucketConfiguration": {
+          "LocationConstraint": "${region_name}"
+        }
+      },
+      "assertion": {
+        "ResponseMetadata.HTTPStatusCode": 200
+      }
+    },
+    {
+      "clientName": "admin",
+      "operation": "CreateBucket",
+      "parameters": {
+        "Bucket": "${Bucket}",
+        "CreateBucketConfiguration": {
+          "LocationConstraint": "${region_name}"
+        }
+      },
+      "assertion": {
+        "ResponseMetadata.HTTPStatusCode": 409,
+        "Error.Code": "BucketAlreadyOwnedByYou"
+      }
+    }
+  ],
+  "CreateBucketWithOwnership-ObjectWriter": [
+    {
+      "operation": "PrepareBucket"
+    },
+    {
+      "clientName": "admin",
+      "operation": "DeleteBucket",
+      "parameters": {
+        "Bucket": "${Bucket}"
+      }
+    },
+    {
+      "clientName": "admin",
+      "operation": "CreateBucket",
+      "parameters": {
+        "Bucket": "${Bucket}",
+        "CreateBucketConfiguration": {
+          "LocationConstraint": "${region_name}"
+        },
+        "ObjectOwnership": "ObjectWriter"
+      },
+      "assertion": {
+        "ResponseMetadata.HTTPStatusCode": 200
+      }
+    },
+    {
+      "clientName": "admin",
+      "operation": "GetBucketOwnershipControls",
+      "parameters": {
+        "Bucket": "${Bucket}"
+      },
+      "assertion": {
+        "ResponseMetadata.HTTPStatusCode": 200,
+        "OwnershipControls": {
+          "Rules": [
+            {
+              "ObjectOwnership": "ObjectWriter"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "clientName": "admin",
+      "operation": "GetBucketAcl",
+      "parameters": {
+        "Bucket": "${Bucket}"
+      },
+      "assertion": {
+        "ResponseMetadata.HTTPStatusCode": 200,
+        "Owner": {
+          "ID": "${account_id}"
+        },
+        "Grants": [
+          {
+            "Grantee": {
+              "ID": "${account_id}",
+              "Type": "CanonicalUser"
+            },
+            "Permission": "FULL_CONTROL"
+          }
+        ]
+      }
+    }
+  ]
+}
