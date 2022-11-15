@@ -1,6 +1,7 @@
-region_name: 'ap-southeast-1'
-endpoint_url: 'https://ap-southeast-1.s3.amazonaws.com'
 tests_dir: './tests'
+client_config:
+  region_name: 'ap-southeast-1'
+  endpoint_url: 'https://ap-southeast-1.s3.amazonaws.com'
 identities:
   admin:
     account_id: 'xxx'

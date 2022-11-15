@@ -39,22 +39,20 @@ def newAnonymousClient(serviceName):
                         config=S3Config(signature_version=UNSIGNED))
 
 
-def newAwsClient(serviceName, identityConfig, endpointUrl, regionName):
-    # identityConfig['endpoint_url'] = endpointUrl
-    identityConfig['region_name'] = regionName
-    identityConfig['config'] = S3Config()
-    return boto3.client(service_name=serviceName, **identityConfig)
+def newAwsClient(serviceName, clientConfig):
+    return boto3.client(serviceName, **clientConfig)
 
 
 def loadConfig():
     filePath = os.getenv("aws_config", "./config.yaml")
+    logger.info(f'logger config from {filePath}')
     with open(filePath, 'r') as fp:
         config = yaml.safe_load(fp)
         if config is None or not isinstance(config, dict) or not config:
             raise RuntimeError('config not valid')
 
         # validate config
-        for requiredKey in ["region_name", "endpoint_url", "identities"]:
+        for requiredKey in ["client_config", "identities"]:
             if requiredKey not in config:
                 raise RuntimeError('missing required key', requiredKey)
         return config
@@ -62,14 +60,12 @@ def loadConfig():
 
 
 def initServicesTestModels(config):
-    regionName = config['region_name']
-    endpointUrl = config['endpoint_url']
     identities = config['identities']
-    testsDir = config['tests_dir']
+    clientConfig = config['client_config']
 
-    properties = {}
-    if 'properties' in config:
-        properties = config['properties']
+    testsDir = "./tests"
+    if 'test_dir' in config:
+        testsDir = config['tests_dir']
 
     if not os.path.exists(testsDir) or not os.path.isdir(testsDir):
         raise RuntimeError('tests dir must be a directory', testsDir)
@@ -81,7 +77,7 @@ def initServicesTestModels(config):
             filePath = os.path.join(serviceDir, testFile)
             if os.path.isfile(filePath) and testFile.endswith(".json"):
                 testFiles.append(filePath)
-        testModel = ServiceTestModel(regionName, serviceName, endpointUrl, identities, properties, testFiles)
+        testModel = ServiceTestModel(serviceName, testFiles, identities, clientConfig)
         serviceModels[serviceName] = testModel
     return serviceModels
 
@@ -193,12 +189,11 @@ def resolveArgInDicts(*dicts):
 
 
 class ServiceTestModel:
-    def __init__(self, regionName, serviceName, endpointUrl, identities, properties, testFiles):
-        self.regionName = regionName
+    def __init__(self, serviceName, testFiles, identities, clientConfig):
         self.serviceName = serviceName
-        self.endpointUrl = endpointUrl
-        self.identities = identities
         self.testFiles = testFiles
+        self.identities = identities
+        self.clientConfig = clientConfig
 
         self._testCases = None
         self._clientDict = {}
@@ -213,12 +208,15 @@ class ServiceTestModel:
         self._clientDict = {}
         for identityName, identityConfig in self.identities.items():
             try:
-                clientConfig = {}
-                for prop in ['service_name', 'region_name', 'api_version', 'use_ssl', 'verify', 'endpoint_url',
-                             'aws_access_key_id', 'aws_secret_access_key', 'aws_session_token', 'config']:
-                    if prop in identityConfig:
-                        clientConfig[prop] = identityConfig[prop]
-                serviceClient = newAwsClient(self.serviceName, clientConfig, self.endpointUrl, self.regionName)
+                clientConfig = self.clientConfig.copy()
+                if identityName == 'anonymous':
+                    serviceClient = newAnonymousClient(self.serviceName)
+                else:
+                    for prop in ['service_name', 'region_name', 'api_version', 'use_ssl', 'verify', 'endpoint_url',
+                                 'aws_access_key_id', 'aws_secret_access_key', 'aws_session_token', 'config']:
+                        if prop in identityConfig:
+                            clientConfig[prop] = identityConfig[prop]
+                    serviceClient = newAwsClient(self.serviceName, clientConfig)
                 serviceClient.supportOperations = serviceClient.meta.service_model.operation_names
 
                 identityConfig['identity_name'] = identityName
