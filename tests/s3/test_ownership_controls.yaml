@@ -1,0 +1,85 @@
+BucketApiTests:
+  - suites:
+      prepareOps:
+        - operation: GenerateBucketName
+        - operation: DeleteBucket
+          clientName: 'admin'
+          parameters:
+            Bucket: '${Bucket}'
+        - operation: CreateBucket
+          clientName: 'admin'
+          parameters:
+            Bucket: '${Bucket}'
+            CreateBucketConfiguration:
+              LocationConstraint: '${region_name}'
+          assertion:
+            ResponseMetadata.HTTPStatusCode: 200
+  - operation: GetBucketOwnershipControls
+    clientName: 'admin'
+    parameters:
+      Bucket: '${Bucket}'
+    assertion:
+      ResponseMetadata.HTTPStatusCode: 404
+      Error.Code: 'OwnershipControlsNotFoundError'
+  - operation: GetBucketAcl
+    clientName: 'admin'
+    parameters:
+      Bucket: '${Bucket}'
+    assertion:
+      ResponseMetadata.HTTPStatusCode: 200
+      Owner.ID: '${account_id}'
+      Grants:
+        - Grantee:
+            ID: '${account_id}'
+            Type: 'CanonicalUser'
+          Permission: 'FULL_CONTROL'
+  - operation: GetBucketOwnershipControls
+    clientName: 'anonymous'
+    parameters:
+      Bucket: '${Bucket}'
+    assertion:
+      ResponseMetadata.HTTPStatusCode: 403
+      Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+  - operation: GetBucketAcl
+    clientName: 'anonymous'
+    parameters:
+      Bucket: '${Bucket}'
+    assertion:
+      ResponseMetadata.HTTPStatusCode: 403
+      Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+  - operation: PutBucketOwnershipControls
+    clientName: 'anonymous'
+    parameters:
+      Bucket: '${Bucket}'
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: 'ObjectWriter'
+    assertion:
+      ResponseMetadata.HTTPStatusCode: 403
+      Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+  - operation: PutBucketOwnershipControls
+    clientName: 'admin'
+    parameters:
+      Bucket: '${Bucket}'
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: 'ObjectWriter'
+    assertion:
+      ResponseMetadata.HTTPStatusCode: 200
+  - operation: PutBucketAcl
+    clientName: 'admin'
+    parameters:
+      Bucket: '${Bucket}'
+      ACL: public-read
+    assertion:
+      ResponseMetadata.HTTPStatusCode: 200
+  - operation: PutBucketOwnershipControls
+    clientName: 'admin'
+    parameters:
+      Bucket: '${Bucket}'
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: 'ObjectWriter'
+    assertion:
+      ResponseMetadata.HTTPStatusCode: 200
+

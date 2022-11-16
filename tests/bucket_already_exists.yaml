@@ -1,0 +1,23 @@
+CreateBucketAlreadyExists:
+  - operation: GenerateBucketName
+  - operation: DeleteBucket
+    clientName: 'admin'
+    parameters:
+      Bucket: '${Bucket}'
+  - operation: CreateBucket
+    clientName: 'admin'
+    parameters:
+      Bucket: '${Bucket}'
+      CreateBucketConfiguration:
+        LocationConstraint: '${region_name}'
+    assertion:
+      ResponseMetadata.HTTPStatusCode: 200
+  - operation: CreateBucket
+    clientName: 'admin'
+    parameters:
+      Bucket: '${Bucket}'
+      CreateBucketConfiguration:
+        LocationConstraint: '${region_name}'
+    assertion:
+      ResponseMetadata.HTTPStatusCode: 409
+      Error.Code: 'BucketAlreadyOwnedByYou'

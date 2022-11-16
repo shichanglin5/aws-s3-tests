@@ -1,10 +1,8 @@
+import copy
 import itertools
-import json
 import numbers
 import os
 import re
-from collections import OrderedDict
-from datetime import datetime
 
 import boto3
 import yaml
@@ -17,6 +15,8 @@ from loguru import logger
 
 bucket_prefix = '1-aws-s3-tests-bucket'
 bucketOrdinal = itertools.count(1)
+globalVariables = {}
+globalStore = {}
 
 
 def newBucketName():
@@ -25,13 +25,14 @@ def newBucketName():
     return '%s-%d' % (bucket_prefix, current_bucket_ordinal)
 
 
-def prepareBucket(localParams, **kwargs):
+def generateBucketName(localParams, **kwargs):
     bucketName = newBucketName()
-    localParams['Bucket'] = bucketName
-    return localParams
+    result = {'Bucket': bucketName}
+    localParams.update(result)
+    return result
 
 
-predefinedFuncDict = {'PrepareBucket': prepareBucket}
+predefinedFuncDict = {'GenerateBucketName': generateBucketName}
 
 
 def newAnonymousClient(serviceName):
@@ -66,23 +67,28 @@ def initServicesTestModels(config):
     testsDir = "./tests"
     if 'test_dir' in config:
         testsDir = config['tests_dir']
+    if 'global_variables' in config:
+        global globalVariables
+        globalVariables = config['global_variables']
 
     if not os.path.exists(testsDir) or not os.path.isdir(testsDir):
         raise RuntimeError('tests dir must be a directory', testsDir)
     serviceModels = {}
     for serviceName in os.listdir(testsDir):
-        testFiles = []
+        if not os.path.isdir(os.path.join(testsDir, serviceName)):
+            continue
+        suiteFiles = []
         serviceDir = os.path.join(testsDir, serviceName)
         for testFile in os.listdir(serviceDir):
             filePath = os.path.join(serviceDir, testFile)
-            if os.path.isfile(filePath) and testFile.endswith(".json"):
-                testFiles.append(filePath)
-        testModel = ServiceTestModel(serviceName, testFiles, identities, clientConfig)
+            if os.path.isfile(filePath) and testFile.endswith(".yaml"):
+                suiteFiles.append(filePath)
+        testModel = ServiceTestModel(serviceName, suiteFiles, identities, clientConfig)
         serviceModels[serviceName] = testModel
     return serviceModels
 
 
-def loadTestCaseFile(filePath):
+def loadFileData(filePath, loader):
     if not os.path.isfile(filePath):
         return
     with open(filePath, 'rb') as fp:
@@ -90,7 +96,7 @@ def loadTestCaseFile(filePath):
 
     logger.debug("Loading : %s" % filePath)
     # noinspection PyTypeChecker
-    return json.loads(payload, object_pairs_hook=OrderedDict)
+    return loader(payload)
 
 
 def validateAssertions(path: str, assertions: dict, response: dict):
@@ -184,31 +190,66 @@ def resolveArgInDicts(*dicts):
             if paramName in dc:
                 return dc[paramName]
             continue
+        if paramName in globalVariables:
+            return globalVariables[paramName]
 
     return decorator
 
 
+def parseSuite(parentSuite: [], parentSuiteName, suites: dict):
+    if suites is None:
+        return [parentSuite]
+    if not isinstance(suites, dict):
+        raise ValueError('suite_nodes must be a dict')
+    result = []
+    for suiteName, suite in suites.items():
+        parentSuiteCopy = copy.deepcopy(parentSuite) if parentSuite else []
+        midSuites = [parentSuiteCopy]
+        for suiteCase in suite:
+            suitePath = f'{parentSuiteName}::{suiteName}'
+            suiteCase['path'] = suitePath
+            for midSuite in midSuites:
+                suiteCaseCopy = copy.deepcopy(suiteCase)
+                if 'suites' in suiteCase:
+                    midPath: str
+                    if 'operation' in suiteCase:
+                        suiteCaseOperation = suiteCase['operation']
+                        midPath = f'{suitePath}::{suiteCaseOperation}'
+                        midSuite.append(suiteCaseCopy)
+                    else:
+                        midPath = f'{suitePath}'
+                    subSuites = suiteCase['suites']
+                    del suiteCase['suites']
+                    midSuites = parseSuite(midSuite, midPath, subSuites)
+                    break
+                else:
+                    midSuite.append(suiteCaseCopy)
+        result.extend(midSuites)
+    return result
+
+
 class ServiceTestModel:
-    def __init__(self, serviceName, testFiles, identities, clientConfig):
+    def __init__(self, serviceName, suiteFiles, identities, clientConfig):
         self.serviceName = serviceName
-        self.testFiles = testFiles
+        self.suiteFiles = suiteFiles
         self.identities = identities
         self.clientConfig = clientConfig
 
-        self._testCases = None
+        self._suiteModels = []
         self._clientDict = {}
+        self.suiteModels = {}
 
     def setUp(self):
-        self._testCases = {}
-        for testFile in self.testFiles:
-            testCase = loadTestCaseFile(testFile)
-            if testCase is not None:
-                self._testCases[testFile] = testCase
-
+        for suiteFile in self.suiteFiles:
+            suiteData = loadFileData(suiteFile, yaml.safe_load)
+            if suiteData is not None:
+                self.suiteModels[suiteFile] = parseSuite([], os.path.basename(suiteFile), suiteData)
         self._clientDict = {}
         for identityName, identityConfig in self.identities.items():
+            for prop in identityConfig:
+                globalVariables[f'{identityName}_{prop}'] = identityConfig[prop]
             try:
-                clientConfig = self.clientConfig.copy()
+                clientConfig = copy.deepcopy(self.clientConfig)
                 if identityName == 'anonymous':
                     serviceClient = newAnonymousClient(self.serviceName)
                 else:
@@ -226,6 +267,10 @@ class ServiceTestModel:
             except Exception as e:
                 logger.error(f"Failed to create client for {identityName}", e)
                 raise e
+        logger.info(f"SetUp completed. "
+                    f"SuiteModel Total: {len(self.suiteModels)}, "
+                    f"Suite Total: {sum([len(l) for l in self.suiteModels.values()])}, "
+                    f"SuiteCase Total: {sum([len(s) for m in self.suiteModels.values() for s in m])}, ")
 
     def tearDown(self):
         for k, v in self._clientDict.items():
@@ -236,17 +281,21 @@ class ServiceTestModel:
                 pass
 
     def run(self):
-        for fileName, fileCase in self._testCases.items():
-            logger.debug(f"Running testCase: {fileName}")
-            for suiteName, suiteCase in fileCase.items():
-                localParams = {}
-                self.doRun("%s::%s::%s" % (self.serviceName, os.path.basename(fileName), suiteName), suiteCase,
-                           localParams)
+        for suiteFile, suiteModel in self.suiteModels.items():
+            logger.debug(f"Running suiteModel: s3::{suiteFile}")
+            for suite in suiteModel:
+                self.doRun(self.serviceName, suite, {})
 
-    def doRun(self, suiteName, suiteCase, localParams):
-        for case in suiteCase:
+    def doRun(self, parentPath, suite, localParams):
+        for case in suite:
             operationName = case['operation']
-            logger.info(f"Executing {suiteName}::{operationName}")
+            path = case['path']
+            caseId = f'{parentPath}::{path}::{operationName}'
+            if filterPattern and not re.match(filterPattern, caseId):
+                logger.info(f"Skipping Test ->  {parentPath}::{operationName}")
+                continue
+
+            logger.info(f"Executing {caseId}")
             resolveFunc = None
             clientName = None
             # response = None
@@ -290,14 +339,12 @@ class ServiceTestModel:
                 validateAssertions('response', assertion, response)
 
 
-class DTEncoder(json.JSONEncoder):
-    def default(self, obj):
-        if isinstance(obj, datetime):
-            return str(obj)
-        return json.JSONEncoder.default(self, obj)
+filterPattern: re.Pattern
 
 
-if __name__ == '__main__':
+def main(filerRegex):
+    global filterPattern
+    filterPattern = re.compile(filerRegex)
     config = loadConfig()
     sms = initServicesTestModels(config)
     for serviceName, serviceModel in sms.items():
@@ -305,3 +352,8 @@ if __name__ == '__main__':
         serviceModel.setUp()
         serviceModel.run()
         serviceModel.tearDown()
+
+
+if __name__ == '__main__':
+    # main(sys.argv[1:])
+    main('.*test_ownership_controls.*')
