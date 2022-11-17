@@ -1,0 +1,867 @@
+CreateBucket-AlreadyExists:
+  - operation: GenerateBucketName
+  - operation: DeleteBucket
+    clientName: 'admin'
+    parameters:
+      Bucket: '${Bucket}'
+  - operation: CreateBucket
+    clientName: 'admin'
+    parameters:
+      Bucket: '${Bucket}'
+      CreateBucketConfiguration:
+        LocationConstraint: '${region_name}'
+    assertion:
+      ResponseMetadata.HTTPStatusCode: 200
+  - operation: CreateBucket
+    clientName: 'admin'
+    parameters:
+      Bucket: '${Bucket}'
+      CreateBucketConfiguration:
+        LocationConstraint: '${region_name}'
+    assertion:
+      ResponseMetadata.HTTPStatusCode: 409
+      Error.Code: 'BucketAlreadyOwnedByYou'
+  - operation: DeleteBucket
+    clientName: 'admin'
+    parameters:
+      Bucket: '${Bucket}'
+CreateBucket-OwnershipAndACL:
+  - suites:
+      PrepareOps:
+        - operation: GenerateBucketName
+        - operation: DeleteBucket
+          clientName: 'admin'
+          parameters:
+            Bucket: '${Bucket}'
+  - suites:
+      Ownership-Default:
+        - operation: CreateBucket
+          clientName: 'admin'
+          parameters:
+            Bucket: '${Bucket}'
+            CreateBucketConfiguration:
+              LocationConstraint: '${region_name}'
+          assertion:
+            ResponseMetadata.HTTPStatusCode: 200
+        - operation: GetBucketOwnershipControls
+          clientName: 'admin'
+          parameters:
+            Bucket: '${Bucket}'
+          assertion:
+            ResponseMetadata.HTTPStatusCode: 404
+            Error.Code: 'OwnershipControlsNotFoundError'
+        - operation: GetBucketAcl
+          clientName: 'admin'
+          parameters:
+            Bucket: '${Bucket}'
+          assertion:
+            ResponseMetadata.HTTPStatusCode: 200
+            Owner.ID: '${account_id}'
+            Grants:
+              - Grantee:
+                  ID: '${account_id}'
+                  Type: 'CanonicalUser'
+                Permission: 'FULL_CONTROL'
+        - operation: GetBucketOwnershipControls
+          clientName: 'anonymous'
+          parameters:
+            Bucket: '${Bucket}'
+          assertion:
+            ResponseMetadata.HTTPStatusCode: 403
+            Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+        - operation: GetBucketAcl
+          clientName: 'anonymous'
+          parameters:
+            Bucket: '${Bucket}'
+          assertion:
+            ResponseMetadata.HTTPStatusCode: 403
+            Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+      Ownership-ObjectWriter:
+        - suites:
+            ACL-None:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'ObjectWriter'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  OwnershipControls:
+                    Rules:
+                      - ObjectOwnership: 'ObjectWriter'
+              - operation: GetBucketAcl
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  Owner.ID: '${account_id}'
+                  Grants:
+                    - Grantee:
+                        ID: '${account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'FULL_CONTROL'
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+              - operation: GetBucketAcl
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+            CannedACL-Private:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'ObjectWriter'
+                  ACL: 'private'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  OwnershipControls:
+                    Rules:
+                      - ObjectOwnership: 'ObjectWriter'
+              - operation: GetBucketAcl
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  Owner.ID: '${account_id}'
+                  Grants:
+                    - Grantee:
+                        ID: '${account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'FULL_CONTROL'
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+              - operation: GetBucketAcl
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+            CannedACL-PublicRead:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'ObjectWriter'
+                  ACL: 'public-read'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  OwnershipControls:
+                    Rules:
+                      - ObjectOwnership: 'ObjectWriter'
+              - operation: GetBucketAcl
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  Owner.ID: '${account_id}'
+                  Grants:
+                    - Grantee:
+                        ID: '${account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'FULL_CONTROL'
+                    - Grantee:
+                        Type: 'Group'
+                        URI: '${group_all_users_url}'
+                      Permission: 'READ'
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+              - operation: GetBucketAcl
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+            CannedACL-PublicReadWrite:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'ObjectWriter'
+                  ACL: 'public-read-write'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  OwnershipControls:
+                    Rules:
+                      - ObjectOwnership: 'ObjectWriter'
+              - operation: GetBucketAcl
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  Owner.ID: '${account_id}'
+                  Grants:
+                    - Grantee:
+                        ID: '${account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'FULL_CONTROL'
+                    - Grantee:
+                        Type: 'Group'
+                        URI: '${group_all_users_url}'
+                      Permission: 'READ'
+                    - Grantee:
+                        Type: 'Group'
+                        URI: '${group_all_users_url}'
+                      Permission: 'WRITE'
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+              - operation: GetBucketAcl
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+            CannedACL-AuthenticatedRead:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'ObjectWriter'
+                  ACL: 'authenticated-read'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  OwnershipControls:
+                    Rules:
+                      - ObjectOwnership: 'ObjectWriter'
+              - operation: GetBucketAcl
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  Owner.ID: '${account_id}'
+                  Grants:
+                    - Grantee:
+                        ID: '${account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'FULL_CONTROL'
+                    - Grantee:
+                        Type: 'Group'
+                        URI: '${group_authenticated_users_url}'
+                      Permission: READ
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+              - operation: GetBucketAcl
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+            CustomACL:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'ObjectWriter'
+                  GrantRead: 'uri="${group_all_users_url}", id="${anonymous_account_id}"'
+                  GrantReadACP: 'uri="${group_all_users_url}", id="${anonymous_account_id}"'
+                  GrantWrite: 'id="${anonymous_account_id}"'
+                  GrantWriteACP: 'id="${anonymous_account_id}"'
+                  GrantFullControl: 'uri="${group_authenticated_users_url}", id="${admin_account_id}"'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  OwnershipControls:
+                    Rules:
+                      - ObjectOwnership: 'ObjectWriter'
+              - operation: GetBucketAcl
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  Owner.ID: '${admin_account_id}'
+                  Grants:
+                    - Grantee:
+                        Type: 'Group'
+                        URI: '${group_all_users_url}'
+                      Permission: 'READ'
+                    - Grantee:
+                        ID: '${anonymous_account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'READ'
+                    - Grantee:
+                        ID: '${anonymous_account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'WRITE'
+                    - Grantee:
+                        Type: 'Group'
+                        URI: '${group_authenticated_users_url}'
+                      Permission: 'FULL_CONTROL'
+                    - Grantee:
+                        ID: '${admin_account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'FULL_CONTROL'
+                    - Grantee:
+                        Type: 'Group'
+                        URI: '${group_all_users_url}'
+                      Permission: 'READ_ACP'
+                    - Grantee:
+                        ID: '${anonymous_account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'READ_ACP'
+                    - Grantee:
+                        ID: '${anonymous_account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'WRITE_ACP'
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+              - operation: GetBucketAcl
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+            Both-Canned-CustomACL-NotAllowed:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'ObjectWriter'
+                  ACL: 'authenticated-read'
+                  GrantRead: 'uri="${group_all_users_url}", id="anonymous_account_id"'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 400
+                  Error.Code: InvalidRequest
+      Ownership-BucketOwnerPreferred:
+        - suites:
+            ACL-None:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'BucketOwnerPreferred'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  OwnershipControls:
+                    Rules:
+                      - ObjectOwnership: 'BucketOwnerPreferred'
+              - operation: GetBucketAcl
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  Owner.ID: '${account_id}'
+                  Grants:
+                    - Grantee:
+                        ID: '${account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'FULL_CONTROL'
+            CannedACL-Private:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'BucketOwnerPreferred'
+                  ACL: 'private'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  OwnershipControls:
+                    Rules:
+                      - ObjectOwnership: 'BucketOwnerPreferred'
+              - operation: GetBucketAcl
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  Owner.ID: '${account_id}'
+                  Grants:
+                    - Grantee:
+                        ID: '${account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'FULL_CONTROL'
+            CannedACL-PublicRead:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'BucketOwnerPreferred'
+                  ACL: 'public-read'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  OwnershipControls:
+                    Rules:
+                      - ObjectOwnership: 'BucketOwnerPreferred'
+              - operation: GetBucketAcl
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  Owner.ID: '${account_id}'
+                  Grants:
+                    - Grantee:
+                        ID: '${account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'FULL_CONTROL'
+                    - Grantee:
+                        Type: 'Group'
+                        URI: '${group_all_users_url}'
+                      Permission: 'READ'
+            CannedACL-PublicReadWrite:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'BucketOwnerPreferred'
+                  ACL: 'public-read-write'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  OwnershipControls:
+                    Rules:
+                      - ObjectOwnership: 'BucketOwnerPreferred'
+              - operation: GetBucketAcl
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  Owner.ID: '${account_id}'
+                  Grants:
+                    - Grantee:
+                        ID: '${account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'FULL_CONTROL'
+                    - Grantee:
+                        Type: 'Group'
+                        URI: '${group_all_users_url}'
+                      Permission: 'READ'
+                    - Grantee:
+                        Type: 'Group'
+                        URI: '${group_all_users_url}'
+                      Permission: 'WRITE'
+            CannedACL-AuthenticatedRead:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'BucketOwnerPreferred'
+                  ACL: 'authenticated-read'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  OwnershipControls:
+                    Rules:
+                      - ObjectOwnership: 'BucketOwnerPreferred'
+              - operation: GetBucketAcl
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  Owner.ID: '${account_id}'
+                  Grants:
+                    - Grantee:
+                        ID: '${account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'FULL_CONTROL'
+                    - Grantee:
+                        Type: 'Group'
+                        URI: '${group_authenticated_users_url}'
+                      Permission: READ
+            CustomACL:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'BucketOwnerPreferred'
+                  GrantRead: 'uri="${group_all_users_url}", id="${anonymous_account_id}"'
+                  GrantReadACP: 'uri="${group_all_users_url}", id="${anonymous_account_id}"'
+                  GrantWrite: 'id="${anonymous_account_id}"'
+                  GrantWriteACP: 'id="${anonymous_account_id}"'
+                  GrantFullControl: 'uri="${group_authenticated_users_url}", id="${admin_account_id}"'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  OwnershipControls:
+                    Rules:
+                      - ObjectOwnership: 'BucketOwnerPreferred'
+              - operation: GetBucketAcl
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  Owner.ID: '${admin_account_id}'
+                  Grants:
+                    - Grantee:
+                        Type: 'Group'
+                        URI: '${group_all_users_url}'
+                      Permission: 'READ'
+                    - Grantee:
+                        ID: '${anonymous_account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'READ'
+                    - Grantee:
+                        ID: '${anonymous_account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'WRITE'
+                    - Grantee:
+                        Type: 'Group'
+                        URI: '${group_authenticated_users_url}'
+                      Permission: 'FULL_CONTROL'
+                    - Grantee:
+                        ID: '${admin_account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'FULL_CONTROL'
+                    - Grantee:
+                        Type: 'Group'
+                        URI: '${group_all_users_url}'
+                      Permission: 'READ_ACP'
+                    - Grantee:
+                        ID: '${anonymous_account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'READ_ACP'
+                    - Grantee:
+                        ID: '${anonymous_account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'WRITE_ACP'
+            Both-Canned-CustomACL-NotAllowed:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'BucketOwnerPreferred'
+                  ACL: 'authenticated-read'
+                  GrantRead: 'uri="${group_all_users_url}", id="anonymous_account_id"'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 400
+                  Error.Code: InvalidRequest
+      Ownership-BucketOwnerEnforced:
+        - suites:
+            ACL-None:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'BucketOwnerEnforced'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  OwnershipControls:
+                    Rules:
+                      - ObjectOwnership: 'BucketOwnerEnforced'
+              - operation: GetBucketAcl
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  Owner.ID: '${account_id}'
+                  Grants:
+                    - Grantee:
+                        ID: '${account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'FULL_CONTROL'
+            CannedACL-Private:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'BucketOwnerEnforced'
+                  ACL: 'private'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  OwnershipControls:
+                    Rules:
+                      - ObjectOwnership: 'BucketOwnerEnforced'
+              - operation: GetBucketAcl
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  Owner.ID: '${account_id}'
+                  Grants:
+                    - Grantee:
+                        ID: '${account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'FULL_CONTROL'
+            CannedACL-PublicRead:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'BucketOwnerEnforced'
+                  ACL: 'public-read'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 400
+                  Error.Code: 'InvalidBucketAclWithObjectOwnership' # Message: Bucket cannot have ACLs set with ObjectOwnership's BucketOwnerEnforced setting
+            CannedACL-PublicReadWrite:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'BucketOwnerEnforced'
+                  ACL: 'public-read-write'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 400
+                  Error.Code: 'InvalidBucketAclWithObjectOwnership'
+            CannedACL-AuthenticatedRead:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'BucketOwnerEnforced'
+                  ACL: 'authenticated-read'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 400
+                  Error.Code: 'InvalidBucketAclWithObjectOwnership'
+            CustomACL:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'BucketOwnerEnforced'
+                  GrantRead: 'uri="${group_all_users_url}", id="${anonymous_account_id}"'
+                  GrantReadACP: 'uri="${group_all_users_url}", id="${anonymous_account_id}"'
+                  GrantWrite: 'id="${anonymous_account_id}"'
+                  GrantWriteACP: 'id="${anonymous_account_id}"'
+                  GrantFullControl: 'uri="${group_authenticated_users_url}", id="${admin_account_id}"'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 400
+                  Error.Code: 'InvalidBucketAclWithObjectOwnership'
+            Both-Canned-CustomACL-NotAllowed:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                  ObjectOwnership: 'BucketOwnerEnforced'
+                  ACL: 'authenticated-read'
+                  GrantRead: 'uri="${group_all_users_url}", id="anonymous_account_id"'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 400
+                  Error.Code: 'InvalidRequest' # 'Message': 'Specifying both Canned ACLs and Header Grants is not allowed'
+  - suites:
+      CleanOps:
+        - operation: DeleteBucket
+          clientName: 'admin'
+          parameters:
+            Bucket: '${Bucket}'
+BucketOwnershipControls:
+  - suites:
+      PrepareOps:
+        - operation: GenerateBucketName
+        - operation: DeleteBucket
+          clientName: 'admin'
+          parameters:
+            Bucket: '${Bucket}'
+        - operation: CreateBucket
+          clientName: 'admin'
+          parameters:
+            Bucket: '${Bucket}'
+            CreateBucketConfiguration:
+              LocationConstraint: '${region_name}'
+          assertion:
+            ResponseMetadata.HTTPStatusCode: 200
+  - suites:
+      admin:
+        - operation: PutBucketOwnershipControls
+          clientName: 'admin'
+          parameters:
+            Bucket: '${Bucket}'
+            OwnershipControls:
+              Rules:
+                - ObjectOwnership: 'ObjectWriter'
+          assertion:
+            ResponseMetadata.HTTPStatusCode: 200
+        - operation: PutBucketAcl
+          clientName: 'admin'
+          parameters:
+            Bucket: '${Bucket}'
+            ACL: public-read
+          assertion:
+            ResponseMetadata.HTTPStatusCode: 200
+        - operation: PutBucketOwnershipControls
+          clientName: 'admin'
+          parameters:
+            Bucket: '${Bucket}'
+            OwnershipControls:
+              Rules:
+                - ObjectOwnership: 'ObjectWriter'
+          assertion:
+            ResponseMetadata.HTTPStatusCode: 200
+      anonymous:
+        - operation: GetBucketAcl
+          clientName: 'anonymous'
+          parameters:
+            Bucket: '${Bucket}'
+          assertion:
+            ResponseMetadata.HTTPStatusCode: 403
+            Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+        - operation: PutBucketOwnershipControls
+          clientName: 'anonymous'
+          parameters:
+            Bucket: '${Bucket}'
+            OwnershipControls:
+              Rules:
+                - ObjectOwnership: 'ObjectWriter'
+          assertion:
+            ResponseMetadata.HTTPStatusCode: 403
+            Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+

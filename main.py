@@ -3,6 +3,8 @@ import itertools
 import numbers
 import os
 import re
+from threading import Thread, Lock
+from time import time
 
 import boto3
 import yaml
@@ -15,13 +17,16 @@ from loguru import logger
 
 bucket_prefix = '1-aws-s3-tests-bucket'
 bucketOrdinal = itertools.count(1)
+bucketOrdinalLock = Lock()
 globalVariables = {}
 globalStore = {}
 
 
 def newBucketName():
     global bucketOrdinal
+    # bucketOrdinalLock.acquire()
     current_bucket_ordinal = next(bucketOrdinal)
+    # bucketOrdinalLock.acquire()
     return '%s-%d' % (bucket_prefix, current_bucket_ordinal)
 
 
@@ -196,34 +201,30 @@ def resolveArgInDicts(*dicts):
     return decorator
 
 
-def parseSuite(parentSuite: [], parentSuiteName, suites: dict):
+def parseSuite(parentSuites: [], parentSuiteName, suites: dict):
     if suites is None:
-        return [parentSuite]
+        return parentSuites
     if not isinstance(suites, dict):
         raise ValueError('suite_nodes must be a dict')
     result = []
     for suiteName, suite in suites.items():
-        parentSuiteCopy = copy.deepcopy(parentSuite) if parentSuite else []
-        midSuites = [parentSuiteCopy]
+        midSuites = copy.deepcopy(parentSuites) if parentSuites else [[]]
         for suiteCase in suite:
+            suiteCaseCopy = copy.deepcopy(suiteCase)
             suitePath = f'{parentSuiteName}::{suiteName}'
-            suiteCase['path'] = suitePath
-            for midSuite in midSuites:
-                suiteCaseCopy = copy.deepcopy(suiteCase)
-                if 'suites' in suiteCase:
-                    midPath: str
-                    if 'operation' in suiteCase:
-                        suiteCaseOperation = suiteCase['operation']
-                        midPath = f'{suitePath}::{suiteCaseOperation}'
-                        midSuite.append(suiteCaseCopy)
-                    else:
-                        midPath = f'{suitePath}'
-                    subSuites = suiteCase['suites']
-                    del suiteCase['suites']
-                    midSuites = parseSuite(midSuite, midPath, subSuites)
-                    break
-                else:
+            suiteCaseCopy['path'] = suitePath
+            midPath: str
+            if 'operation' in suiteCase:
+                suiteCaseOperation = suiteCase['operation']
+                midPath = f'{suitePath}::{suiteCaseOperation}'
+                for midSuite in midSuites:
                     midSuite.append(suiteCaseCopy)
+            else:
+                midPath = f'{suitePath}'
+            if 'suites' in suiteCase:
+                subSuites = suiteCase['suites']
+                del suiteCase['suites']
+                midSuites = parseSuite(midSuites, midPath, subSuites)
         result.extend(midSuites)
     return result
 
@@ -238,6 +239,7 @@ class ServiceTestModel:
         self._suiteModels = []
         self._clientDict = {}
         self.suiteModels = {}
+        self.hooks = []
 
     def setUp(self):
         for suiteFile in self.suiteFiles:
@@ -273,6 +275,8 @@ class ServiceTestModel:
                     f"SuiteCase Total: {sum([len(s) for m in self.suiteModels.values() for s in m])}, ")
 
     def tearDown(self):
+        for hook in self.hooks:
+            hook()
         for k, v in self._clientDict.items():
             logger.debug(f"Closing client: {k}")
             try:
@@ -282,9 +286,8 @@ class ServiceTestModel:
 
     def run(self):
         for suiteFile, suiteModel in self.suiteModels.items():
-            logger.debug(f"Running suiteModel: s3::{suiteFile}")
             for suite in suiteModel:
-                self.doRun(self.serviceName, suite, {})
+                self.submitTask(self.doRun, [self.serviceName, suite, {}])
 
     def doRun(self, parentPath, suite, localParams):
         for case in suite:
@@ -338,22 +341,33 @@ class ServiceTestModel:
                 resolvePlaceholderDict(assertion, resolveFunc)
                 validateAssertions('response', assertion, response)
 
+    def submitTask(self, target, args):
+        t = Thread(target=target, args=args)
+        t.start()
+        self.hooks.append(t.join)
 
-filterPattern: re.Pattern
+
+filterPattern = None
 
 
-def main(filerRegex):
+def main(*prefixes):
+    start = time()
     global filterPattern
-    filterPattern = re.compile(filerRegex)
+    if prefixes:
+        filterPattern = re.compile(prefixes[0])
     config = loadConfig()
     sms = initServicesTestModels(config)
+
     for serviceName, serviceModel in sms.items():
         logger.info(f'Run ServiceModel: {serviceName}')
         serviceModel.setUp()
         serviceModel.run()
         serviceModel.tearDown()
+    end = time()
+    logger.info('Tests Completed. Time Spent: %.2fs' % (end - start))
 
 
 if __name__ == '__main__':
     # main(sys.argv[1:])
-    main('.*test_ownership_controls.*')
+    # main('.PrepareOps.*')
+    main()
