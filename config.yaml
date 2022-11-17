@@ -1,7 +1,6 @@
 tests_dir: './tests'
 client_config:
   region_name: 'ap-southeast-1'
-  endpoint_url: 'https://ap-southeast-1.s3.amazonaws.com'
 identities:
   admin:
     account_id: 'xxx'
@@ -9,6 +8,6 @@ identities:
     aws_secret_access_key: 'xxx'
   anonymous:
     account_id: '65a011a29cdf8ec533ec3d1ccaae921c'
-aws_variables:
+global_variables:
   group_all_users_url: 'http://acs.amazonaws.com/groups/global/AllUsers'
   group_authenticated_users_url: 'http://acs.amazonaws.com/groups/global/AuthenticatedUsers'
