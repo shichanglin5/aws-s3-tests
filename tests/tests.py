@@ -3,6 +3,7 @@ import unittest
 import uuid
 
 import boto3
+from loguru import logger
 
 from main import resolvePlaceHolder
 
@@ -29,3 +30,6 @@ class Tests(unittest.TestCase):
         self.assertEqual('s2_100', resolvePlaceHolder(s4, context))
         self.assertEqual(bytearray(100), resolvePlaceHolder(s5, context))
         self.assertEqual(bytearray(100), resolvePlaceHolder(s6, context))
+
+    def tests(self):
+        logger.info(uuid.uuid1().hex)

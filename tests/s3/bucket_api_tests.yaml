@@ -94,9 +94,8 @@ CreateBucket-OwnershipAndACL:
                   Bucket: '${Bucket}'
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 200
-                  OwnershipControls:
-                    Rules:
-                      - ObjectOwnership: 'ObjectWriter'
+                  OwnershipControls.Rules:
+                    - ObjectOwnership: 'ObjectWriter'
               - operation: GetBucketAcl
                 clientName: 'admin'
                 parameters:
@@ -140,9 +139,8 @@ CreateBucket-OwnershipAndACL:
                   Bucket: '${Bucket}'
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 200
-                  OwnershipControls:
-                    Rules:
-                      - ObjectOwnership: 'ObjectWriter'
+                  OwnershipControls.Rules:
+                    - ObjectOwnership: 'ObjectWriter'
               - operation: GetBucketAcl
                 clientName: 'admin'
                 parameters:
@@ -186,9 +184,8 @@ CreateBucket-OwnershipAndACL:
                   Bucket: '${Bucket}'
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 200
-                  OwnershipControls:
-                    Rules:
-                      - ObjectOwnership: 'ObjectWriter'
+                  OwnershipControls.Rules:
+                    - ObjectOwnership: 'ObjectWriter'
               - operation: GetBucketAcl
                 clientName: 'admin'
                 parameters:
@@ -236,9 +233,8 @@ CreateBucket-OwnershipAndACL:
                   Bucket: '${Bucket}'
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 200
-                  OwnershipControls:
-                    Rules:
-                      - ObjectOwnership: 'ObjectWriter'
+                  OwnershipControls.Rules:
+                    - ObjectOwnership: 'ObjectWriter'
               - operation: GetBucketAcl
                 clientName: 'admin'
                 parameters:
@@ -290,9 +286,8 @@ CreateBucket-OwnershipAndACL:
                   Bucket: '${Bucket}'
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 200
-                  OwnershipControls:
-                    Rules:
-                      - ObjectOwnership: 'ObjectWriter'
+                  OwnershipControls.Rules:
+                    - ObjectOwnership: 'ObjectWriter'
               - operation: GetBucketAcl
                 clientName: 'admin'
                 parameters:
@@ -344,9 +339,8 @@ CreateBucket-OwnershipAndACL:
                   Bucket: '${Bucket}'
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 200
-                  OwnershipControls:
-                    Rules:
-                      - ObjectOwnership: 'ObjectWriter'
+                  OwnershipControls.Rules:
+                    - ObjectOwnership: 'ObjectWriter'
               - operation: GetBucketAcl
                 clientName: 'admin'
                 parameters:
@@ -431,9 +425,8 @@ CreateBucket-OwnershipAndACL:
                   Bucket: '${Bucket}'
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 200
-                  OwnershipControls:
-                    Rules:
-                      - ObjectOwnership: 'BucketOwnerPreferred'
+                  OwnershipControls.Rules:
+                    - ObjectOwnership: 'BucketOwnerPreferred'
               - operation: GetBucketAcl
                 clientName: 'admin'
                 parameters:
@@ -446,6 +439,20 @@ CreateBucket-OwnershipAndACL:
                         ID: '${account_id}'
                         Type: 'CanonicalUser'
                       Permission: 'FULL_CONTROL'
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+              - operation: GetBucketAcl
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
             CannedACL-Private:
               - operation: CreateBucket
                 clientName: 'admin'
@@ -463,9 +470,8 @@ CreateBucket-OwnershipAndACL:
                   Bucket: '${Bucket}'
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 200
-                  OwnershipControls:
-                    Rules:
-                      - ObjectOwnership: 'BucketOwnerPreferred'
+                  OwnershipControls.Rules:
+                    - ObjectOwnership: 'BucketOwnerPreferred'
               - operation: GetBucketAcl
                 clientName: 'admin'
                 parameters:
@@ -478,6 +484,20 @@ CreateBucket-OwnershipAndACL:
                         ID: '${account_id}'
                         Type: 'CanonicalUser'
                       Permission: 'FULL_CONTROL'
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+              - operation: GetBucketAcl
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
             CannedACL-PublicRead:
               - operation: CreateBucket
                 clientName: 'admin'
@@ -495,9 +515,8 @@ CreateBucket-OwnershipAndACL:
                   Bucket: '${Bucket}'
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 200
-                  OwnershipControls:
-                    Rules:
-                      - ObjectOwnership: 'BucketOwnerPreferred'
+                  OwnershipControls.Rules:
+                    - ObjectOwnership: 'BucketOwnerPreferred'
               - operation: GetBucketAcl
                 clientName: 'admin'
                 parameters:
@@ -514,6 +533,20 @@ CreateBucket-OwnershipAndACL:
                         Type: 'Group'
                         URI: '${group_all_users_url}'
                       Permission: 'READ'
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+              - operation: GetBucketAcl
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
             CannedACL-PublicReadWrite:
               - operation: CreateBucket
                 clientName: 'admin'
@@ -531,9 +564,8 @@ CreateBucket-OwnershipAndACL:
                   Bucket: '${Bucket}'
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 200
-                  OwnershipControls:
-                    Rules:
-                      - ObjectOwnership: 'BucketOwnerPreferred'
+                  OwnershipControls.Rules:
+                    - ObjectOwnership: 'BucketOwnerPreferred'
               - operation: GetBucketAcl
                 clientName: 'admin'
                 parameters:
@@ -554,6 +586,20 @@ CreateBucket-OwnershipAndACL:
                         Type: 'Group'
                         URI: '${group_all_users_url}'
                       Permission: 'WRITE'
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+              - operation: GetBucketAcl
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
             CannedACL-AuthenticatedRead:
               - operation: CreateBucket
                 clientName: 'admin'
@@ -571,9 +617,8 @@ CreateBucket-OwnershipAndACL:
                   Bucket: '${Bucket}'
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 200
-                  OwnershipControls:
-                    Rules:
-                      - ObjectOwnership: 'BucketOwnerPreferred'
+                  OwnershipControls.Rules:
+                    - ObjectOwnership: 'BucketOwnerPreferred'
               - operation: GetBucketAcl
                 clientName: 'admin'
                 parameters:
@@ -590,6 +635,20 @@ CreateBucket-OwnershipAndACL:
                         Type: 'Group'
                         URI: '${group_authenticated_users_url}'
                       Permission: READ
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+              - operation: GetBucketAcl
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
             CustomACL:
               - operation: CreateBucket
                 clientName: 'admin'
@@ -611,9 +670,8 @@ CreateBucket-OwnershipAndACL:
                   Bucket: '${Bucket}'
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 200
-                  OwnershipControls:
-                    Rules:
-                      - ObjectOwnership: 'BucketOwnerPreferred'
+                  OwnershipControls.Rules:
+                    - ObjectOwnership: 'BucketOwnerPreferred'
               - operation: GetBucketAcl
                 clientName: 'admin'
                 parameters:
@@ -654,6 +712,19 @@ CreateBucket-OwnershipAndACL:
                         ID: '${anonymous_account_id}'
                         Type: 'CanonicalUser'
                       Permission: 'WRITE_ACP'
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+              - operation: GetBucketAcl
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
             Both-Canned-CustomACL-NotAllowed:
               - operation: CreateBucket
                 clientName: 'admin'
@@ -685,9 +756,8 @@ CreateBucket-OwnershipAndACL:
                   Bucket: '${Bucket}'
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 200
-                  OwnershipControls:
-                    Rules:
-                      - ObjectOwnership: 'BucketOwnerEnforced'
+                  OwnershipControls.Rules:
+                    - ObjectOwnership: 'BucketOwnerEnforced'
               - operation: GetBucketAcl
                 clientName: 'admin'
                 parameters:
@@ -700,6 +770,20 @@ CreateBucket-OwnershipAndACL:
                         ID: '${account_id}'
                         Type: 'CanonicalUser'
                       Permission: 'FULL_CONTROL'
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+              - operation: GetBucketAcl
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
             CannedACL-Private:
               - operation: CreateBucket
                 clientName: 'admin'
@@ -717,9 +801,8 @@ CreateBucket-OwnershipAndACL:
                   Bucket: '${Bucket}'
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 200
-                  OwnershipControls:
-                    Rules:
-                      - ObjectOwnership: 'BucketOwnerEnforced'
+                  OwnershipControls.Rules:
+                    - ObjectOwnership: 'BucketOwnerEnforced'
               - operation: GetBucketAcl
                 clientName: 'admin'
                 parameters:
@@ -732,6 +815,20 @@ CreateBucket-OwnershipAndACL:
                         ID: '${account_id}'
                         Type: 'CanonicalUser'
                       Permission: 'FULL_CONTROL'
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied'
+              - operation: GetBucketAcl
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied'
             CannedACL-PublicRead:
               - operation: CreateBucket
                 clientName: 'admin'
@@ -756,6 +853,20 @@ CreateBucket-OwnershipAndACL:
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 400
                   Error.Code: 'InvalidBucketAclWithObjectOwnership'
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 404
+                  Error.Code: 'NoSuchBucket'
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 404
+                  Error.Code: 'NoSuchBucket'
             CannedACL-AuthenticatedRead:
               - operation: CreateBucket
                 clientName: 'admin'
@@ -768,6 +879,20 @@ CreateBucket-OwnershipAndACL:
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 400
                   Error.Code: 'InvalidBucketAclWithObjectOwnership'
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 404
+                  Error.Code: 'NoSuchBucket'
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 404
+                  Error.Code: 'NoSuchBucket'
             CustomACL:
               - operation: CreateBucket
                 clientName: 'admin'
@@ -784,6 +909,20 @@ CreateBucket-OwnershipAndACL:
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 400
                   Error.Code: 'InvalidBucketAclWithObjectOwnership'
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 404
+                  Error.Code: 'NoSuchBucket'
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 404
+                  Error.Code: 'NoSuchBucket'
             Both-Canned-CustomACL-NotAllowed:
               - operation: CreateBucket
                 clientName: 'admin'
@@ -797,6 +936,20 @@ CreateBucket-OwnershipAndACL:
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 400
                   Error.Code: 'InvalidRequest' # 'Message': 'Specifying both Canned ACLs and Header Grants is not allowed'
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 404
+                  Error.Code: 'NoSuchBucket'
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 404
+                  Error.Code: 'NoSuchBucket'
   - suites:
       CleanOps:
         - operation: DeleteBucket

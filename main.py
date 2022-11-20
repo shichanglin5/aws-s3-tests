@@ -103,6 +103,11 @@ def loadConfig():
     raise RuntimeError('failed to load config')
 
 
+def configLogger():
+    pass
+    # logger.
+
+
 def initServicesTestModels(config):
     identities = config['identities']
     clientConfig = config['client_config']
@@ -197,8 +202,7 @@ def resolvePlaceholderDict(parameters, context):
         elif isinstance(v, numbers.Number):
             continue
         else:
-            logger.error(f'Unsupported parameter: {v}')
-            raise RuntimeError()
+            raise RuntimeError(f'Unsupported parameter: {v}')
 
 
 placeHolderHandlers = {
@@ -224,19 +228,15 @@ def resolvePlaceHolderArr(valueArray, context):
 def resolvePlaceHolder(value, context):
     for pattern, handler in placeHolderHandlers.items():
         for placeHolder, paramName in set(pattern.findall(value)):
-            try:
-                paramValue = handler(paramName, context)
-                if placeHolder == value:
-                    if paramValue is None:
-                        return None
-                    return paramValue
-                else:
-                    if paramValue is None:
-                        paramValue = ''
-                    value = value.replace(placeHolder, str(paramValue))
-            except Exception as e:
-                logger.exception('resolvePlaceHolder error', e)
-                return value
+            paramValue = handler(paramName, context)
+            if placeHolder == value:
+                if paramValue is None:
+                    return None
+                return paramValue
+            else:
+                if paramValue is None:
+                    paramValue = ''
+                value = value.replace(placeHolder, str(paramValue))
     return value
 
 
@@ -333,15 +333,16 @@ class ServiceTestModel:
     def run(self):
         for suiteFile, suiteModel in self.suiteModels.items():
             for suite in suiteModel:
-                self.submitTask(self.doRun, [self.serviceName, suite, {}])
+                suiteId = uuid.uuid1().hex
+                self.submitTask(self.doRun, [f'{self.serviceName}[{suiteId}]', suite, {}])
 
-    def doRun(self, parentPath, suite, localParams):
+    def doRun(self, suiteId, suite, localParams):
         for case in suite:
             operationName = case['operation']
             path = case['path']
-            caseId = f'{parentPath}::{path}::{operationName}'
+            caseId = f'{suiteId}::{path}::{operationName}'
             if filterPattern and not re.match(filterPattern, caseId):
-                logger.trace(f"Skipping Test ->  {parentPath}::{operationName}")
+                logger.trace(f"Skipping Test ->  {suiteId}::{operationName}")
                 continue
 
             logger.info(f"Executing {caseId}")
@@ -363,31 +364,43 @@ class ServiceTestModel:
                     opContext = newContext(localParams)
                     resolvePlaceholderDict(parameters, opContext)
                 caseLocalParams.update(parameters)
-                response = predefinedFuncDict[operationName](localParams, **caseLocalParams)
+                try:
+                    response = predefinedFuncDict[operationName](localParams, **caseLocalParams)
+                except Exception as e:
+                    logger.exception('{} -> type: {}, msg: {} ', caseId, 'predefinedFuncDict', e)
+                    return
             elif 'clientName' in case and (clientName := case['clientName']) in self._clientDict \
                     and operationName in (serviceClient := self._clientDict[clientName]).supportOperations:
                 parameters = {}
                 if 'parameters' in case:
                     parameters = case['parameters']
                     opContext = newContext(serviceClient.identityConfig, localParams)
-                    resolvePlaceholderDict(parameters, opContext)
+                    try:
+                        resolvePlaceholderDict(parameters, opContext)
+                    except Exception as e:
+                        logger.exception('{} -> type: {}, msg: {} ', caseId, 'resolvePlaceholder', e)
+                        return
                 try:
                     # noinspection PyProtectedMember
                     response = BaseClient._make_api_call(serviceClient, operationName, parameters)
                 except ClientError as e:
                     response = e.response
                 except Exception as e:
-                    logger.exception('BaseClient._make_api_call', e)
-                    raise e
-            else:
-                logger.error(f'Invalid operation: {operationName}')
-                raise RuntimeError()
+                    logger.exception('{} -> type: {}, msg: {} ', caseId, 'BaseClient', e)
+                    return
 
-            logger.debug(f"[{clientName}] Execute {operationName} response: {response}")
+            else:
+                logger.exception('{} -> msg: {} ', caseId, 'operation not exists')
+
+            logger.debug(f"{clientName}_Response_{caseId}: {response}")
             if 'assertion' in case:
                 assertion = case['assertion']
-                resolvePlaceholderDict(assertion, opContext)
-                validateAssertions('response', assertion, response)
+                try:
+                    resolvePlaceholderDict(assertion, opContext)
+                    validateAssertions('response', assertion, response)
+                except Exception as e:
+                    logger.exception('{} -> type: {}, msg: {} ', caseId, 'validateAssertions', e)
+                    return
 
     def submitTask(self, target, args):
         t = Thread(target=target, args=args)
@@ -395,7 +408,7 @@ class ServiceTestModel:
         self.hooks.append(t.join)
 
 
-filterPattern = None
+filterPattern = ''
 
 
 def main(*prefixes):
@@ -417,5 +430,5 @@ def main(*prefixes):
 
 if __name__ == '__main__':
     # main(sys.argv[1:])
-    main('.*TestPutObject.*')
-    # main()
+    # main('.*TestPutObject.*')
+    main()
