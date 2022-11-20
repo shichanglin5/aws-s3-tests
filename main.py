@@ -3,6 +3,7 @@ import itertools
 import numbers
 import os
 import re
+import uuid
 from threading import Thread, Lock
 from time import time
 
@@ -18,7 +19,7 @@ from loguru import logger
 bucket_prefix = '1-aws-s3-tests-bucket'
 bucketOrdinal = itertools.count(1)
 bucketOrdinalLock = Lock()
-globalVariables = {}
+globalVariables = {'uuid': uuid}
 globalStore = {}
 
 
@@ -37,7 +38,44 @@ def generateBucketName(localParams, **kwargs):
     return result
 
 
-predefinedFuncDict = {'GenerateBucketName': generateBucketName}
+def generateObjectKey(localParams, **kwargs):
+    if 'Prefix' in kwargs:
+        Prefix = kwargs['Prefix']
+    else:
+        Prefix = ''
+
+    ObjectKey = Prefix + uuid.uuid1().hex
+    result = {'Key': ObjectKey}
+    localParams.update(result)
+    return result
+
+
+def DeleteObjects(localParams, **kwargs):
+    client = kwargs['Client']
+    Bucket = kwargs['Bucket']
+    try:
+        response = client.list_objects(Bucket=Bucket)
+        while True:
+            finalResponse = response
+            if 'Contents' in response and (objects := response['Contents']):
+                objectIdentifierList = [{'Key': obj['Key'] for obj in objects}]
+                finalResponse = client.delete_objects(Bucket=Bucket, Delete={
+                    'Objects': objectIdentifierList
+                })
+            if 'IsTruncated' in response and response['IsTruncated'] and 'NextMarker' in response and (
+                    NextMarker := response['NextMarker']):
+                response = client.list_objects(Bucket=Bucket, Marker=NextMarker)
+            else:
+                return finalResponse
+    except ClientError as e:
+        return e.response
+
+
+predefinedFuncDict = {
+    'GenerateBucketName': generateBucketName,
+    'GenerateObjectKey': generateObjectKey,
+    'DeleteObjects': DeleteObjects
+}
 
 
 def newAnonymousClient(serviceName):
@@ -74,7 +112,7 @@ def initServicesTestModels(config):
         testsDir = config['tests_dir']
     if 'global_variables' in config:
         global globalVariables
-        globalVariables = config['global_variables']
+        globalVariables.update(config['global_variables'])
 
     if not os.path.exists(testsDir) or not os.path.isdir(testsDir):
         raise RuntimeError('tests dir must be a directory', testsDir)
@@ -146,16 +184,16 @@ def parseResponseByDot(path, key, response):
     return result
 
 
-def resolvePlaceholderDict(parameters, resolveArg):
+def resolvePlaceholderDict(parameters, context):
     if parameters is None or len(parameters) == 0:
         return
     for k, v in parameters.items():
         if isinstance(v, dict) and dict:
-            resolvePlaceholderDict(v, resolveArg)
+            resolvePlaceholderDict(v, context)
         elif isinstance(v, list) and len(v):
-            resolvePlaceHolderArr(v, resolveArg)
+            resolvePlaceHolderArr(v, context)
         elif isinstance(v, str):
-            parameters[k] = resolvePlaceHolder(v, resolveArg)
+            parameters[k] = resolvePlaceHolder(v, context)
         elif isinstance(v, numbers.Number):
             continue
         else:
@@ -163,42 +201,50 @@ def resolvePlaceholderDict(parameters, resolveArg):
             raise RuntimeError()
 
 
-placeHolderPattern = re.compile(r'\$\{(.*?)}')
+placeHolderHandlers = {
+    re.compile('(\$\{(.*?)})'): lambda arg, context: context[arg] if arg in context else None,
+    re.compile('(@\{(.*?)})'): lambda arg, context: eval(arg, context)
+}
 
 
-def resolvePlaceHolderArr(valueArray, resolveArg):
+def resolvePlaceHolderArr(valueArray, context):
     if valueArray is None or len(valueArray) == 0:
         return
     for index, value in enumerate(valueArray):
         if isinstance(value, list) and len(value):
-            resolvePlaceHolderArr(value, resolveArg)
+            resolvePlaceHolderArr(value, context)
         if isinstance(value, dict) and len(value):
-            resolvePlaceholderDict(value, resolveArg)
+            resolvePlaceholderDict(value, context)
         elif isinstance(value, str):
-            valueArray[index] = resolvePlaceHolder(value, resolveArg)
+            valueArray[index] = resolvePlaceHolder(value, context)
         else:
             raise RuntimeError('Unsupported parameter', value)
 
 
-def resolvePlaceHolder(value, resolveArg):
-    for paramName in set(placeHolderPattern.findall(value)):
-        paramValue = resolveArg(paramName)
-        if paramValue is None:
-            raise RuntimeError('placeholder variable not found!', paramName)
-        value = value.replace('${%s}' % paramName, paramValue)
+def resolvePlaceHolder(value, context):
+    for pattern, handler in placeHolderHandlers.items():
+        for placeHolder, paramName in set(pattern.findall(value)):
+            try:
+                paramValue = handler(paramName, context)
+                if placeHolder == value:
+                    if paramValue is None:
+                        return None
+                    return paramValue
+                else:
+                    if paramValue is None:
+                        paramValue = ''
+                    value = value.replace(placeHolder, str(paramValue))
+            except Exception as e:
+                logger.exception('resolvePlaceHolder error', e)
+                return value
     return value
 
 
-def resolveArgInDicts(*dicts):
-    def decorator(paramName):
-        for dc in dicts:
-            if paramName in dc:
-                return dc[paramName]
-            continue
-        if paramName in globalVariables:
-            return globalVariables[paramName]
-
-    return decorator
+def newContext(*dicts):
+    requestContext = globalVariables.copy()
+    for dc in dicts:
+        requestContext.update(dc)
+    return requestContext
 
 
 def parseSuite(parentSuites: [], parentSuiteName, suites: dict):
@@ -295,11 +341,11 @@ class ServiceTestModel:
             path = case['path']
             caseId = f'{parentPath}::{path}::{operationName}'
             if filterPattern and not re.match(filterPattern, caseId):
-                logger.info(f"Skipping Test ->  {parentPath}::{operationName}")
+                logger.trace(f"Skipping Test ->  {parentPath}::{operationName}")
                 continue
 
             logger.info(f"Executing {caseId}")
-            resolveFunc = None
+            opContext = None
             clientName = None
             # response = None
 
@@ -310,12 +356,12 @@ class ServiceTestModel:
                     parameters = case['parameters']
                 if 'clientName' in case and (clientName := case['clientName']) in self._clientDict:
                     serviceClient = self._clientDict[clientName]
-                    caseLocalParams['client'] = serviceClient
-                    resolveFunc = resolveArgInDicts(serviceClient.identityConfig, localParams)
-                    resolvePlaceholderDict(parameters, resolveFunc)
+                    caseLocalParams['Client'] = serviceClient
+                    opContext = newContext(serviceClient.identityConfig, localParams)
+                    resolvePlaceholderDict(parameters, opContext)
                 else:
-                    resolveFunc = resolveArgInDicts(localParams)
-                    resolvePlaceholderDict(parameters, resolveFunc)
+                    opContext = newContext(localParams)
+                    resolvePlaceholderDict(parameters, opContext)
                 caseLocalParams.update(parameters)
                 response = predefinedFuncDict[operationName](localParams, **caseLocalParams)
             elif 'clientName' in case and (clientName := case['clientName']) in self._clientDict \
@@ -323,22 +369,24 @@ class ServiceTestModel:
                 parameters = {}
                 if 'parameters' in case:
                     parameters = case['parameters']
-                    resolveFunc = resolveArgInDicts(serviceClient.identityConfig, localParams)
-                    resolvePlaceholderDict(parameters, resolveFunc)
+                    opContext = newContext(serviceClient.identityConfig, localParams)
+                    resolvePlaceholderDict(parameters, opContext)
                 try:
                     # noinspection PyProtectedMember
                     response = BaseClient._make_api_call(serviceClient, operationName, parameters)
                 except ClientError as e:
                     response = e.response
+                except Exception as e:
+                    logger.exception('BaseClient._make_api_call', e)
+                    raise e
             else:
                 logger.error(f'Invalid operation: {operationName}')
                 raise RuntimeError()
 
-            localParams['response'] = response
             logger.debug(f"[{clientName}] Execute {operationName} response: {response}")
             if 'assertion' in case:
                 assertion = case['assertion']
-                resolvePlaceholderDict(assertion, resolveFunc)
+                resolvePlaceholderDict(assertion, opContext)
                 validateAssertions('response', assertion, response)
 
     def submitTask(self, target, args):
@@ -369,5 +417,5 @@ def main(*prefixes):
 
 if __name__ == '__main__':
     # main(sys.argv[1:])
-    # main('.PrepareOps.*')
-    main()
+    main('.*TestPutObject.*')
+    # main()

@@ -819,49 +819,55 @@ BucketOwnershipControls:
               LocationConstraint: '${region_name}'
           assertion:
             ResponseMetadata.HTTPStatusCode: 200
-  - suites:
-      admin:
-        - operation: PutBucketOwnershipControls
-          clientName: 'admin'
-          parameters:
-            Bucket: '${Bucket}'
-            OwnershipControls:
-              Rules:
-                - ObjectOwnership: 'ObjectWriter'
-          assertion:
-            ResponseMetadata.HTTPStatusCode: 200
-        - operation: PutBucketAcl
-          clientName: 'admin'
-          parameters:
-            Bucket: '${Bucket}'
-            ACL: public-read
-          assertion:
-            ResponseMetadata.HTTPStatusCode: 200
-        - operation: PutBucketOwnershipControls
-          clientName: 'admin'
-          parameters:
-            Bucket: '${Bucket}'
-            OwnershipControls:
-              Rules:
-                - ObjectOwnership: 'ObjectWriter'
-          assertion:
-            ResponseMetadata.HTTPStatusCode: 200
-      anonymous:
-        - operation: GetBucketAcl
-          clientName: 'anonymous'
-          parameters:
-            Bucket: '${Bucket}'
-          assertion:
-            ResponseMetadata.HTTPStatusCode: 403
-            Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
-        - operation: PutBucketOwnershipControls
-          clientName: 'anonymous'
-          parameters:
-            Bucket: '${Bucket}'
-            OwnershipControls:
-              Rules:
-                - ObjectOwnership: 'ObjectWriter'
-          assertion:
-            ResponseMetadata.HTTPStatusCode: 403
-            Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+  - operation: PutBucketOwnershipControls
+    clientName: 'admin'
+    parameters:
+      Bucket: '${Bucket}'
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: 'ObjectWriter'
+    assertion:
+      ResponseMetadata.HTTPStatusCode: 200
+  - operation: GetBucketOwnershipControls
+    clientName: 'admin'
+    parameters:
+      Bucket: '${Bucket}'
+    assertion:
+      ResponseMetadata.HTTPStatusCode: 200
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: 'ObjectWriter'
+  - operation: PutBucketAcl
+    clientName: 'admin'
+    parameters:
+      Bucket: '${Bucket}'
+      ACL: public-read
+    assertion:
+      ResponseMetadata.HTTPStatusCode: 200
+  - operation: PutBucketOwnershipControls
+    clientName: 'admin'
+    parameters:
+      Bucket: '${Bucket}'
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: 'ObjectWriter'
+    assertion:
+      ResponseMetadata.HTTPStatusCode: 200
+  - operation: GetBucketAcl
+    clientName: 'anonymous'
+    parameters:
+      Bucket: '${Bucket}'
+    assertion:
+      ResponseMetadata.HTTPStatusCode: 403
+      Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+  - operation: PutBucketOwnershipControls
+    clientName: 'anonymous'
+    parameters:
+      Bucket: '${Bucket}'
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: 'ObjectWriter'
+    assertion:
+      ResponseMetadata.HTTPStatusCode: 403
+      Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
 
