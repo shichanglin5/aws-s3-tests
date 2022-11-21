@@ -282,8 +282,7 @@ class ServiceTestModel:
         self.identities = identities
         self.clientConfig = clientConfig
 
-        self._suiteModels = []
-        self._clientDict = {}
+        self.clientDict = {}
         self.suiteModels = {}
         self.hooks = []
 
@@ -292,7 +291,7 @@ class ServiceTestModel:
             suiteData = loadFileData(suiteFile, yaml.safe_load)
             if suiteData is not None:
                 self.suiteModels[suiteFile] = parseSuite([], os.path.basename(suiteFile), suiteData)
-        self._clientDict = {}
+        self.clientDict = {}
         for identityName, identityConfig in self.identities.items():
             for prop in identityConfig:
                 globalVariables[f'{identityName}_{prop}'] = identityConfig[prop]
@@ -311,7 +310,7 @@ class ServiceTestModel:
                 identityConfig['identity_name'] = identityName
                 identityConfig.update(clientConfig)
                 serviceClient.identityConfig = identityConfig
-                self._clientDict[identityName] = serviceClient
+                self.clientDict[identityName] = serviceClient
             except Exception as e:
                 logger.error(f"Failed to create client for {identityName}", e)
                 raise e
@@ -323,7 +322,7 @@ class ServiceTestModel:
     def tearDown(self):
         for hook in self.hooks:
             hook()
-        for k, v in self._clientDict.items():
+        for k, v in self.clientDict.items():
             logger.debug(f"Closing client: {k}")
             try:
                 v.close()
@@ -355,8 +354,8 @@ class ServiceTestModel:
                 parameters = {}
                 if 'parameters' in case:
                     parameters = case['parameters']
-                if 'clientName' in case and (clientName := case['clientName']) in self._clientDict:
-                    serviceClient = self._clientDict[clientName]
+                if 'clientName' in case and (clientName := case['clientName']) in self.clientDict:
+                    serviceClient = self.clientDict[clientName]
                     caseLocalParams['Client'] = serviceClient
                     opContext = newContext(serviceClient.identityConfig, localParams)
                     resolvePlaceholderDict(parameters, opContext)
@@ -369,8 +368,8 @@ class ServiceTestModel:
                 except Exception as e:
                     logger.exception('{} -> type: {}, msg: {} ', caseId, 'predefinedFuncDict', e)
                     return
-            elif 'clientName' in case and (clientName := case['clientName']) in self._clientDict \
-                    and operationName in (serviceClient := self._clientDict[clientName]).supportOperations:
+            elif 'clientName' in case and (clientName := case['clientName']) in self.clientDict \
+                    and operationName in (serviceClient := self.clientDict[clientName]).supportOperations:
                 parameters = {}
                 if 'parameters' in case:
                     parameters = case['parameters']
