@@ -1,0 +1,57 @@
+TestPutObject:
+  - suites:
+      __hide__:
+        prepareOps:
+          - operation: GenerateBucketName
+          - operation: DeleteObjects
+            clientName: 'admin'
+            parameters:
+              Bucket: '${Bucket}'
+          - operation: DeleteBucket
+            clientName: 'admin'
+            parameters:
+              Bucket: '${Bucket}'
+          - operation: CreateBucket
+            clientName: 'admin'
+            parameters:
+              Bucket: '${Bucket}'
+              CreateBucketConfiguration:
+                LocationConstraint: '${region_name}'
+            assertion:
+              ResponseMetadata.HTTPStatusCode: 200
+  - suites:
+      ObjectWriter:
+        - operation: GenerateObjectKey
+          parameters:
+            Prefix: '/hello/world'
+        - operation: PutObject
+          clientName: 'admin'
+          parameters:
+            Bucket: '${Bucket}'
+            Key: '${Key}'
+            Body: '@{bytearray(1024)}'
+          assertion:
+            ResponseMetadata.HTTPStatusCode: 201
+            etag: '0f343b0931126a20f133d67c2b018a3b'
+        - operation: GetObject
+          clientName: 'admin'
+          parameters:
+            Bucket: '${Bucket}'
+            Key: '${Key}'
+            Body: '@{bytearray(1024)}'
+          assertion:
+            ResponseMetadata.HTTPStatusCode: 201
+            etag: '0f343b0931126a20f133d67c2b018a3b'
+  - suites:
+    __hide__:
+      cleanOps:
+        - operation: DeleteObjects
+          clientName: 'admin'
+          parameters:
+            Bucket: '${Bucket}'
+        - operation: DeleteBucket
+          clientName: 'admin'
+          parameters:
+            Bucket: '${Bucket}'
+          assertion:
+            ResponseMetadata.HTTPStatusCode: 204

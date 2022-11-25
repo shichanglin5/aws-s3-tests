@@ -1,9 +1,16 @@
 CreateBucket-AlreadyExists:
-  - operation: GenerateBucketName
-  - operation: DeleteBucket
-    clientName: 'admin'
-    parameters:
-      Bucket: '${Bucket}'
+  - suites:
+      __hide__:
+        prepareOps:
+          - operation: GenerateBucketName
+          - operation: DeleteObjects
+            clientName: 'admin'
+            parameters:
+              Bucket: '${Bucket}'
+          - operation: DeleteBucket
+            clientName: 'admin'
+            parameters:
+              Bucket: '${Bucket}'
   - operation: CreateBucket
     clientName: 'admin'
     parameters:
@@ -22,17 +29,23 @@ CreateBucket-AlreadyExists:
       ResponseMetadata.HTTPStatusCode: 409
       Error.Code: 'BucketAlreadyOwnedByYou'
   - operation: DeleteBucket
+    __hide__: True
     clientName: 'admin'
     parameters:
       Bucket: '${Bucket}'
 CreateBucket-OwnershipAndACL:
   - suites:
-      PrepareOps:
-        - operation: GenerateBucketName
-        - operation: DeleteBucket
-          clientName: 'admin'
-          parameters:
-            Bucket: '${Bucket}'
+      __hide__:
+        PrepareOps:
+          - operation: GenerateBucketName
+          - operation: DeleteObjects
+            clientName: 'admin'
+            parameters:
+              Bucket: '${Bucket}'
+          - operation: DeleteBucket
+            clientName: 'admin'
+            parameters:
+              Bucket: '${Bucket}'
   - suites:
       Ownership-Default:
         - operation: CreateBucket
@@ -951,27 +964,33 @@ CreateBucket-OwnershipAndACL:
                   ResponseMetadata.HTTPStatusCode: 404
                   Error.Code: 'NoSuchBucket'
   - suites:
-      CleanOps:
-        - operation: DeleteBucket
-          clientName: 'admin'
-          parameters:
-            Bucket: '${Bucket}'
+      __hide__:
+        CleanOps:
+          - operation: DeleteBucket
+            clientName: 'admin'
+            parameters:
+              Bucket: '${Bucket}'
 BucketOwnershipControls:
   - suites:
-      PrepareOps:
-        - operation: GenerateBucketName
-        - operation: DeleteBucket
-          clientName: 'admin'
-          parameters:
-            Bucket: '${Bucket}'
-        - operation: CreateBucket
-          clientName: 'admin'
-          parameters:
-            Bucket: '${Bucket}'
-            CreateBucketConfiguration:
-              LocationConstraint: '${region_name}'
-          assertion:
-            ResponseMetadata.HTTPStatusCode: 200
+      __hide__:
+        PrepareOps:
+          - operation: GenerateBucketName
+          - operation: DeleteObjects
+            clientName: 'admin'
+            parameters:
+              Bucket: '${Bucket}'
+          - operation: DeleteBucket
+            clientName: 'admin'
+            parameters:
+              Bucket: '${Bucket}'
+          - operation: CreateBucket
+            clientName: 'admin'
+            parameters:
+              Bucket: '${Bucket}'
+              CreateBucketConfiguration:
+                LocationConstraint: '${region_name}'
+            assertion:
+              ResponseMetadata.HTTPStatusCode: 200
   - operation: PutBucketOwnershipControls
     clientName: 'admin'
     parameters:
@@ -1023,4 +1042,11 @@ BucketOwnershipControls:
     assertion:
       ResponseMetadata.HTTPStatusCode: 403
       Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+  - suites:
+      __hide__:
+        CleanOps:
+          - operation: DeleteBucket
+            clientName: 'admin'
+            parameters:
+              Bucket: '${Bucket}'
 

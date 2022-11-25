@@ -1,4 +1,4 @@
-tests_dir: './tests'
+tests_dir: './suites'
 client_config:
   region_name: 'ap-southeast-1'
 identities:
@@ -11,3 +11,5 @@ identities:
 global_variables:
   group_all_users_url: 'http://acs.amazonaws.com/groups/global/AllUsers'
   group_authenticated_users_url: 'http://acs.amazonaws.com/groups/global/AuthenticatedUsers'
+exporter:
+  xmind: ./aws_tests.xmind

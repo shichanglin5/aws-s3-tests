@@ -1,11 +1,13 @@
-import re
+import json
+import os
 import unittest
 import uuid
 
-import boto3
 from loguru import logger
 
-from main import resolvePlaceHolder
+from core import const
+from core.exporters import Exporter, appendTopics, createXmindFile
+from core.place_holder import resolvePlaceHolder
 
 _: uuid.UUID
 
@@ -33,3 +35,24 @@ class Tests(unittest.TestCase):
 
     def tests(self):
         logger.info(uuid.uuid1().hex)
+
+    def testDetermineFilePath(self):
+        p = uuid.uuid1().hex
+        r = Exporter(".json")
+
+        l = []
+        try:
+            for i in range(0, 3):
+                f = r.determineFilePath(f'{p}/')
+                l.append(f)
+                if i == 0:
+                    expect = f'{p}/aws_test.report'
+                else:
+                    expect = f'{p}/aws_test_{i}.report'
+                self.assertEqual(f, os.path.abspath(expect))
+                with open(f, 'a') as fp:
+                    fp.write("")
+        finally:
+            for f in l:
+                os.remove(f)
+            os.removedirs(f'{p}')
