@@ -4,18 +4,10 @@ from typing import Any
 
 from core import const
 
-
-def evalHandler(arg, context):
-    v = eval(arg, context)
-    return v
-
-
 PLACE_HOLDER_HANDLERS: [re.Pattern, lambda arg, context: Any] = {
     re.compile('(\$\{(.*?)})'): lambda arg, context: context[arg] if arg in context else None,
-    re.compile('(@\{(.*?)})'): evalHandler}
+    re.compile('(@\{(.*?)})'): lambda arg, context: eval(arg, context)}
 
-
-# re.compile('(@\{(.*?)})'): lambda arg, context: eval(arg, context)}
 
 def resolvePlaceholderDict(parameters, context):
     if parameters is None or len(parameters) == 0:

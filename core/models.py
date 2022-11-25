@@ -14,12 +14,29 @@ from botocore.exceptions import ClientError
 from loguru import logger
 
 from core import const
-from core.assertions import validateAssertions
+from core.assertion import validateAssertions
 from core.loader import loadFileData
 from core.place_holder import resolvePlaceholderDict
 from core.predefind import predefinedFuncDict, newAnonymousClient, newAwsClient
 
 GLOBAL_VARIABLES = {'uuid': uuid}
+
+
+# class SuiteCase(dict):
+#     def __init__(self, data):
+#         super().__init__(data)
+#         # self.name = name
+#         # self.order = order
+#         # self.operation = operation
+#         # self.clientName = clientName
+#         # self.parameters = parameters
+#         # self.assertion = assertion
+#         # self.suites = suites
+#
+#         self.order = None
+#         self.caseSuccess = None
+#         self.errorInfo = None
+#         self.hide = False
 
 
 class ServiceTestModel:
@@ -44,7 +61,7 @@ class ServiceTestModel:
         for suiteFile in self.suiteFiles:
             suiteData = loadFileData(suiteFile, yaml.safe_load)
             # don't present filename in result tree
-            # self.suiteModels[suiteFile] = parseSuite([[{'name':suiteFile}]], suiteData)
+            # self.suiteModels[suiteFile] = parseSuite([[{const.CASE_NAME:suiteFile}]], suiteData)
             self.suiteModels[suiteFile] = parseSuite([[]], suiteData)
         self.clientDict = {}
         for identityName, identityConfig in self.identities.items():
@@ -52,11 +69,10 @@ class ServiceTestModel:
                 GLOBAL_VARIABLES[f'{identityName}_{prop}'] = identityConfig[prop]
             try:
                 clientConfig = copy.deepcopy(self.clientConfig)
-                if identityName == 'anonymous':
+                if identityName == const.ANONYMOUS:
                     serviceClient = newAnonymousClient(self.serviceName)
                 else:
-                    for prop in ['service_name', 'region_name', 'api_version', 'use_ssl', 'verify', 'endpoint_url',
-                                 'aws_access_key_id', 'aws_secret_access_key', 'aws_session_token', 'config']:
+                    for prop in const.CLIENT_PROPERTIES:
                         if prop in identityConfig:
                             clientConfig[prop] = identityConfig[prop]
                     serviceClient = newAwsClient(self.serviceName, clientConfig)
@@ -91,8 +107,8 @@ class ServiceTestModel:
         suiteExecPath = suiteId
 
         for case in suite:
-            caseName = case['operation'] if 'operation' in case else case[
-                'name'] if 'name' else 'error[case name undefined]]'
+            caseName = case[const.CASE_OPERATION] if const.CASE_OPERATION in case else case[
+                const.CASE_NAME] if const.CASE_NAME else 'error[case name undefined]]'
             currentSuiteExecPath = f'{suiteExecPath}::{caseName}'
             ignore = const.HIDE in case and case[const.HIDE]
 
@@ -107,20 +123,21 @@ class ServiceTestModel:
                     logger.debug(f"Skipping Test ->  {currentSuiteExecPath}")
                     return
 
-                if 'operation' not in case:
+                if const.CASE_OPERATION not in case:
                     if not ignore:
                         suiteExecPath = currentSuiteExecPath
                     continue
 
-                operationName = case['operation']
+                operationName = case[const.CASE_OPERATION]
                 opContext = None
                 clientName = None
 
                 if operationName in predefinedFuncDict.keys():
                     caseLocals = suiteLocals.copy()
-                    if 'parameters' in case:
-                        parameters = case['parameters']
-                    if 'clientName' in case and (clientName := case['clientName']) in self.clientDict:
+                    if const.CASE_PARAMETERS in case:
+                        parameters = case[const.CASE_PARAMETERS]
+                    if const.CASE_CLIENT_NAME in case and (
+                            clientName := case[const.CASE_CLIENT_NAME]) in self.clientDict:
                         serviceClient = self.clientDict[clientName]
                         caseLocals['Client'] = serviceClient
                         opContext = newContext(serviceClient.identityConfig, suiteLocals)
@@ -132,10 +149,10 @@ class ServiceTestModel:
                     response = predefinedFuncDict[operationName](serviceModel=self, suiteLocals=suiteLocals,
                                                                  caseLocals=caseLocals)
 
-                elif 'clientName' in case and (clientName := case['clientName']) in self.clientDict \
+                elif const.CASE_CLIENT_NAME in case and (clientName := case[const.CASE_CLIENT_NAME]) in self.clientDict \
                         and operationName in (serviceClient := self.clientDict[clientName]).supportOperations:
-                    if 'parameters' in case:
-                        parameters = case['parameters']
+                    if const.CASE_PARAMETERS in case:
+                        parameters = case[const.CASE_PARAMETERS]
                         opContext = newContext(serviceClient.identityConfig, suiteLocals)
                         resolvePlaceholderDict(parameters, opContext)
                     try:
@@ -147,12 +164,13 @@ class ServiceTestModel:
                 else:
                     raise RuntimeError(f'operation[{operationName}] undefined')
 
+                case[const.CASE_RESPONSE] = response
                 if not ignore:
                     logger.debug(
                         f"Response@{f'{clientName}@' if clientName else ''}{currentSuiteExecPath} => {response}")
 
-                if 'assertion' in case:
-                    assertion = case['assertion']
+                if const.CASE_ASSERTION in case:
+                    assertion = case[const.CASE_ASSERTION]
                     resolvePlaceholderDict(assertion, opContext)
                     validateAssertions('response', assertion, response)
                 case[const.CASE_SUCCESS] = True
@@ -190,7 +208,7 @@ def initServicesTestModels(config, filterPattern):
     clientConfig = config['client_config']
 
     testsDir = "./tests"
-    if 'test_dir' in config:
+    if 'tests_dir' in config:
         testsDir = config['tests_dir']
     if 'global_variables' in config:
         global GLOBAL_VARIABLES
@@ -238,7 +256,7 @@ def parseSuite(parentSuites: [], suites: dict):
             wrappedSuites = suiteWrapper
         for suiteName, suite in wrappedSuites.items():
             midSuites = copy.deepcopy(parentSuites) if parentSuites else [[]]
-            forkNode = {'name': suiteName, const.ORDER: next(caseOrdinal)}
+            forkNode = {const.CASE_NAME: suiteName, const.ORDER: next(caseOrdinal)}
             if ignore:
                 forkNode[const.HIDE] = True
             for midSuite in midSuites:
@@ -248,12 +266,12 @@ def parseSuite(parentSuites: [], suites: dict):
                     suiteCase[const.HIDE] = True
                 suiteCaseCopy = copy.deepcopy(suiteCase)
                 midPath: str
-                if 'operation' in suiteCase:
+                if const.CASE_OPERATION in suiteCase:
                     for midSuite in midSuites:
                         midSuite.append(suiteCaseCopy)
-                if 'suites' in suiteCase:
-                    subSuites = suiteCase['suites']
-                    del suiteCase['suites']
+                if const.CASE_SUITES in suiteCase:
+                    subSuites = suiteCase[const.CASE_SUITES]
+                    del suiteCase[const.CASE_SUITES]
                     midSuites = parseSuite(midSuites, subSuites)
             resultSuites.extend(midSuites)
     return resultSuites
@@ -261,7 +279,7 @@ def parseSuite(parentSuites: [], suites: dict):
 
 def reportResult(serviceModels):
     for serviceName, serviceModel in serviceModels.items():
-        suiteFileTotal = len(serviceModel.suiteModels)
+        # suiteFileTotal = len(serviceModel.suiteModels)
 
         suiteTotal = sum([len(l) for l in serviceModel.suiteModels.values()])
         suitePassCount = len(serviceModel.suite_pass)
@@ -279,23 +297,23 @@ def reportResult(serviceModels):
                             casePassCount += 1
                         else:
                             caseFailedCount += 1
-                        if 'clientName' in case:
+                        if const.CASE_CLIENT_NAME in case:
                             apiInvokedCount += 1
                     else:
                         caseSkippedCount += 1
                     caseTotal += 1
         apiInvokedCount += serviceModel.extra_case_api_invoked_count
 
-        summary = f"---{serviceName}[{suiteFileTotal} files]--- " \
-                  f"Suite: [TOTAL: {suiteTotal}, " \
+        summary = f"{str(serviceName).upper()}: " \
+                  f"Suite [TOTAL: {suiteTotal}, " \
                   f"PASS: {suitePassCount}, " \
                   f"FAILED: {suiteFailedCount}, " \
-                  f"SKIPPED: {suiteSkippedCount} ], " \
-                  f"SuiteCase: [TOTAL: {caseTotal}, " \
+                  f"SKIPPED: {suiteSkippedCount}], " \
+                  f"SuiteCase [TOTAL: {caseTotal}, " \
                   f"PASS: {casePassCount}, " \
                   f"FAILED: {caseFailedCount}, " \
                   f"SKIPPED: {caseSkippedCount} " \
-                  f"API_INVOKED: {apiInvokedCount} ]"
+                  f"API_INVOKED: {apiInvokedCount}]"
 
         if suiteFailedCount:
             logger.error(summary)

@@ -1,12 +1,9 @@
-import json
 import os
+import re
 import unittest
 import uuid
 
-from loguru import logger
-
-from core import const
-from core.exporters import Exporter, appendTopics, createXmindFile
+from core.exporters import determineFilePath
 from core.place_holder import resolvePlaceHolder
 
 _: uuid.UUID
@@ -33,26 +30,27 @@ class Tests(unittest.TestCase):
         self.assertEqual(bytearray(100), resolvePlaceHolder(s5, context))
         self.assertEqual(bytearray(100), resolvePlaceHolder(s6, context))
 
-    def tests(self):
-        logger.info(uuid.uuid1().hex)
+    def testPattern(self):
+        p1 = re.compile('(\$\{(.*?)})')
+        self.assertEqual(p1.findall("${name}"), [('${name}', 'name')])
+
+        p1 = re.compile('(@\{(.*?)})')
+        self.assertEqual(p1.findall("@{name}"), [('@{name}', 'name')])
 
     def testDetermineFilePath(self):
-        p = uuid.uuid1().hex
-        r = Exporter(".json")
-
-        l = []
+        p, li = uuid.uuid1().hex, []
         try:
             for i in range(0, 3):
-                f = r.determineFilePath(f'{p}/')
-                l.append(f)
+                f = determineFilePath(f'{p}/')
+                li.append(f)
                 if i == 0:
-                    expect = f'{p}/aws_test.report'
+                    expect = f'{p}/aws_tests.file'
                 else:
-                    expect = f'{p}/aws_test_{i}.report'
+                    expect = f'{p}/aws_tests_{i}.file'
                 self.assertEqual(f, os.path.abspath(expect))
                 with open(f, 'a') as fp:
                     fp.write("")
         finally:
-            for f in l:
+            for f in li:
                 os.remove(f)
             os.removedirs(f'{p}')

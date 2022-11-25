@@ -1,10 +1,22 @@
 # named variables
 CASE_SUCCESS = '__case_success__'
+CASE_OPERATION = 'operation'
+CASE_NAME = 'name'
+CASE_PARAMETERS = 'parameters'
+CASE_ASSERTION = 'assertion'
+CASE_SUITES = 'suites'
+CASE_CLIENT_NAME = 'clientName'
+CASE_RESPONSE = 'response'
+
 ORDER = '__order__'
 SUITE_STATE_START = 1
 SUITE_STATE_SKIPPED = 1 << 1
 EXPORTERS = 'exporters'
 ERROR_INFO = 'error_info'
+
+ANONYMOUS = 'anonymous'
+
+INCLUDE_FIELDS = 'include_fields'
 
 HIDE = '__hide__'
 STATE_INIT = 0
@@ -12,6 +24,9 @@ STATE_STARTED = 1
 STATE_SKIPPED = 1 << 1
 STATE_FAILED = 1 << 2
 RESET_HOOKS = 'resetHooks'
+
+CLIENT_PROPERTIES = ['service_name', 'region_name', 'api_version', 'use_ssl', 'verify', 'endpoint_url',
+                     'aws_access_key_id', 'aws_secret_access_key', 'aws_session_token', 'config']
 
 AWS_SERVICES = ['accessanalyzer', 'account', 'acm', 'acm-pca', 'alexaforbusiness', 'amp', 'amplify', 'amplifybackend',
                 'amplifyuibuilder', 'apigateway', 'apigatewaymanagementapi', 'apigatewayv2', 'appconfig',

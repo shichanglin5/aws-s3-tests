@@ -1,39 +1,4 @@
-CreateBucket-AlreadyExists:
-  - suites:
-      __hide__:
-        prepareOps:
-          - operation: GenerateBucketName
-          - operation: DeleteObjects
-            clientName: 'admin'
-            parameters:
-              Bucket: '${Bucket}'
-          - operation: DeleteBucket
-            clientName: 'admin'
-            parameters:
-              Bucket: '${Bucket}'
-  - operation: CreateBucket
-    clientName: 'admin'
-    parameters:
-      Bucket: '${Bucket}'
-      CreateBucketConfiguration:
-        LocationConstraint: '${region_name}'
-    assertion:
-      ResponseMetadata.HTTPStatusCode: 200
-  - operation: CreateBucket
-    clientName: 'admin'
-    parameters:
-      Bucket: '${Bucket}'
-      CreateBucketConfiguration:
-        LocationConstraint: '${region_name}'
-    assertion:
-      ResponseMetadata.HTTPStatusCode: 409
-      Error.Code: 'BucketAlreadyOwnedByYou'
-  - operation: DeleteBucket
-    __hide__: True
-    clientName: 'admin'
-    parameters:
-      Bucket: '${Bucket}'
-CreateBucket-OwnershipAndACL:
+IntegrationTests:
   - suites:
       __hide__:
         PrepareOps:
@@ -47,7 +12,7 @@ CreateBucket-OwnershipAndACL:
             parameters:
               Bucket: '${Bucket}'
   - suites:
-      Ownership-Default:
+      Default:
         - operation: CreateBucket
           clientName: 'admin'
           parameters:
@@ -56,39 +21,72 @@ CreateBucket-OwnershipAndACL:
               LocationConstraint: '${region_name}'
           assertion:
             ResponseMetadata.HTTPStatusCode: 200
-        - operation: GetBucketOwnershipControls
-          clientName: 'admin'
-          parameters:
-            Bucket: '${Bucket}'
-          assertion:
-            ResponseMetadata.HTTPStatusCode: 404
-            Error.Code: 'OwnershipControlsNotFoundError'
-        - operation: GetBucketAcl
-          clientName: 'admin'
-          parameters:
-            Bucket: '${Bucket}'
-          assertion:
-            ResponseMetadata.HTTPStatusCode: 200
-            Owner.ID: '${account_id}'
-            Grants:
-              - Grantee:
-                  ID: '${account_id}'
-                  Type: 'CanonicalUser'
-                Permission: 'FULL_CONTROL'
-        - operation: GetBucketOwnershipControls
-          clientName: 'anonymous'
-          parameters:
-            Bucket: '${Bucket}'
-          assertion:
-            ResponseMetadata.HTTPStatusCode: 403
-            Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
-        - operation: GetBucketAcl
-          clientName: 'anonymous'
-          parameters:
-            Bucket: '${Bucket}'
-          assertion:
-            ResponseMetadata.HTTPStatusCode: 403
-            Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+          suites:
+            DuplicateCreateBucket:
+              - operation: CreateBucket
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  CreateBucketConfiguration:
+                    LocationConstraint: '${region_name}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 409
+                  Error.Code: 'BucketAlreadyOwnedByYou'
+            BucketApiTests:
+              - operation: GetBucketOwnershipControls
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 404
+                  Error.Code: 'OwnershipControlsNotFoundError'
+              - operation: GetBucketAcl
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  Owner.ID: '${account_id}'
+                  Grants:
+                    - Grantee:
+                        ID: '${account_id}'
+                        Type: 'CanonicalUser'
+                      Permission: 'FULL_CONTROL'
+              - operation: GetBucketOwnershipControls
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+              - operation: GetBucketAcl
+                clientName: 'anonymous'
+                parameters:
+                  Bucket: '${Bucket}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 403
+                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+            ObjectApis:
+              - operation: GenerateObjectKey
+                __hide__: true
+                parameters:
+                  Prefix: '/hello/world'
+              - operation: PutObject
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  Key: '${Key}'
+                  Body: '@{bytearray(1024)}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
+                  ETag: '"0f343b0931126a20f133d67c2b018a3b"'
+              - operation: GetObject
+                clientName: 'admin'
+                parameters:
+                  Bucket: '${Bucket}'
+                  Key: '${Key}'
+                assertion:
+                  ResponseMetadata.HTTPStatusCode: 200
       Ownership-ObjectWriter:
         - suites:
             ACL-None:
@@ -1049,4 +1047,3 @@ BucketOwnershipControls:
             clientName: 'admin'
             parameters:
               Bucket: '${Bucket}'
-

@@ -11,5 +11,7 @@ identities:
 global_variables:
   group_all_users_url: 'http://acs.amazonaws.com/groups/global/AllUsers'
   group_authenticated_users_url: 'http://acs.amazonaws.com/groups/global/AuthenticatedUsers'
-exporter:
-  xmind: ./aws_tests.xmind
+exporters:
+  xmind:
+    file_path: exports/aws_tests.xmind
+    include_fields: ['parameters', 'assertion', 'response', 'errorInfo']

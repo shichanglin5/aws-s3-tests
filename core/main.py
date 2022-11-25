@@ -29,15 +29,15 @@ def main(*prefixes):
 
     if const.EXPORTERS in config:
         exporters = config[const.EXPORTERS]
-        for name, filePath in exporters.items():
+        for name, conf in exporters.items():
             if name in EXPORTER_DICT:
                 exporter = EXPORTER_DICT[name]
-                exporter().generateReport(sms, filePath)
+                exporter(conf).generateReport(sms)
             else:
                 logger.warning('export {} not found, skipping.'.format(name))
 
 
 if __name__ == '__main__':
     # main(sys.argv[1:])
-    main('.*OwnershipAndACL.*')
-    # main()
+    # main('.*TestPutObject.*')
+    main()
