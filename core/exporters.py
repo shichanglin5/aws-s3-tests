@@ -1,5 +1,6 @@
 import itertools
 import json
+import numbers
 import os
 import zipfile
 
@@ -8,12 +9,14 @@ from loguru import logger
 
 from core import const
 from core.models import ServiceTestModel
+from core.utils import IgnoreNotSerializable
 
 
 class Exporter:
-    def __init__(self, fileExtension, config):
+    def __init__(self, fileExtension, config, summary):
         self.filePath = determineFilePath(filePath=config['file_path'] if 'file_path' in config else None, ext=fileExtension)
         self.includeFields = config[const.INCLUDE_FIELDS] if const.INCLUDE_FIELDS in config else []
+        self.summary = summary
 
     def generateReport(self, serviceModels: {str, ServiceModel}):
         try:
@@ -48,9 +51,12 @@ def determineFilePath(filePath=None, file='aws_tests', ext="file"):
     return finalPath
 
 
+var_notes = "notes"
+
+
 class XmindExporter(Exporter):
-    def __init__(self, config: dict):
-        super().__init__("xmind", config)
+    def __init__(self, config: dict, summary: dict):
+        super().__init__("xmind", config, summary)
 
     def doGenerateReport(self, serviceModels: {str, ServiceTestModel}):
         content = self.buildXmindData(serviceModels)
@@ -73,7 +79,7 @@ class XmindExporter(Exporter):
     def buildXmindData(self, serviceModels: {str, ServiceTestModel}):
         content = []
         for serviceName, serviceModel in serviceModels.items():
-            sheet, subTopics = createSheet(serviceName)
+            sheet, subTopics = createSheet(serviceName, self.summary[serviceName])
             # logger.info(json.dumps(serviceModel.suite_pass))
             self.appendTopics(subTopics, 'PASS', serviceModel.suite_pass, "#15831C")
             self.appendTopics(subTopics, 'FAILED', serviceModel.suite_failed, "#E32C2D")
@@ -82,13 +88,12 @@ class XmindExporter(Exporter):
         return content
 
     def appendTopics(self, subTopics, topicTitle, suites, lineColor):
-        caseTree, caseNodes, var_node, var_tree = {}, [], 'nodes', 'tree'
+        caseTree, caseNodes = {}, []
+        var_parent, var_data, var_nodes, var_tree = 'parent', 'data', 'nodes', 'tree'
         for suite in suites:
-            midTree = caseTree
-            midNodes = caseNodes
+            mid, midTree, midNodes = None, caseTree, caseNodes
             for case in suite:
-                ignoreCase = False
-                caseFailed = False
+                ignoreCase, caseFailed = False, False
                 if const.HIDE in case and case[const.HIDE]:
                     ignoreCase = True
                 if const.CASE_OPERATION not in case:
@@ -100,6 +105,7 @@ class XmindExporter(Exporter):
                         "line-width": "3pt",
                         "line-color": lineColor,
                         "fo:color": "#000000FF",
+                        "fo:font-weight": "bold",
                     }
                 elif const.CASE_SUCCESS not in case:
                     if ignoreCase:
@@ -132,22 +138,27 @@ class XmindExporter(Exporter):
                             "line-width": "3pt",
                             "line-color": lineColor,
                         }
-                title = case[const.CASE_NAME] if const.CASE_NAME in case else case[const.CASE_OPERATION]
+                title = case[const.CASE_TITLE] if const.CASE_TITLE in case else case[const.CASE_OPERATION]
 
                 # find existing tree node
                 if title in midTree:
                     mid = midTree[title]
-                    midTree = mid[var_tree]
-                    midNodes = mid[var_node]
+                    midTree, midNodes, midData = mid[var_tree], mid[var_nodes], mid[var_data]
+                    if var_notes in midData:
+                        del midData[var_notes]
+                    if var_parent in mid:
+                        parentNode = mid[var_parent]
+                        while parentNode:
+                            if var_data in parentNode:
+                                parentNodeData = parentNode[var_data]
+                                if 'note' in parentNodeData:
+                                    del parentNode['note']
+                            parentNode = parentNode[var_parent] if var_parent in parentNode else None
                     continue
 
-                # point 2
-                newSubNodes = []
-                newSubTree = {}
-                newNode = {var_tree: newSubTree, var_node: newSubNodes}
-
-                # fill to mid
-                midNodes.append({
+                # create new tree node
+                newSubNodes, newSubTree = [], {}
+                newCaseData = {
                     const.ORDER: case[const.ORDER] if const.ORDER in case else 0,
                     "title": title,
                     "style": {
@@ -164,23 +175,26 @@ class XmindExporter(Exporter):
                             "markerId": "symbol-exclam"
                         }
                     ] if caseFailed else None,
-                    "notes": {
+                    var_notes: {
                         "plain": {
                             "content": '\n\n'.join(itr) if (
-                                itr := ['### %s ###\n%s' % (str(field).capitalize(), json.dumps(fieldValue, default=IgnoreNotSerializable)) for field in self.includeFields if
-                                        field in case and (fieldValue := case[field])]) else None
+                                itr := ['### %s ###\n%s' % (
+                                    str(field).capitalize(), fieldValue if isinstance(fieldValue, (numbers.Number, str)) else json.dumps(fieldValue, default=IgnoreNotSerializable))
+                                        for field in self.includeFields if field in case and (fieldValue := case[field])]) else None
                         }
                     } if self.includeFields and [field for field in self.includeFields if field in case] else None
-                })
+                }
+                newNode = {var_parent: mid, var_data: newCaseData, var_tree: newSubTree, var_nodes: newSubNodes}
+
+                midNodes.append(newCaseData)
                 midTree[title] = newNode
 
-                # update mid
-                midNodes = newSubNodes
-                midTree = newSubTree
+                midNodes, midTree, mid = newSubNodes, newSubTree, newNode
         if caseNodes:
             sortNodes(caseNodes)
             subTopics.append({
                 "title": topicTitle,
+                "branch": "folded",
                 "children": {
                     "attached": caseNodes,
                 },
@@ -194,10 +208,6 @@ class XmindExporter(Exporter):
                 }})
 
 
-def IgnoreNotSerializable(o):
-    return f'skipped@{o.__class__.__name__}'
-
-
 def sortNodes(nodes):
     list.sort(nodes, key=lambda n: n[const.ORDER])
     for node in nodes:
@@ -209,7 +219,7 @@ def sortNodes(nodes):
                 sortNodes(attachedNodes)
 
 
-def createSheet(serviceName):
+def createSheet(serviceName, serviceSummary):
     subTopics = []
     sheet = {
         "class": "sheet",
@@ -222,6 +232,17 @@ def createSheet(serviceName):
             "children": {
                 "attached": subTopics
             },
+            "notes": {
+                "plain": {
+                    "content": '\n\n'.join([
+                        '### Suite Summary ###\n%s' % '\n'.join(l) if (l := ['%s: %s' % (k, v) for k in ['suiteTotal', 'suitePassCount', 'suiteFailedCount', 'suiteSkippedCount']
+                                                                             if k in serviceSummary and (v := serviceSummary[k]) is not None]) else '',
+
+                        '### Suite Case Summary ###\n%s' % '\n'.join(l) if (l := ['%s: %s' % (k, v) for k in ['caseTotal', 'casePassCount', 'caseFailedCount', 'caseSkippedCount', 'apiInvokedCount']
+                                                                                  if k in serviceSummary and (v := serviceSummary[k]) is not None]) else '',
+                    ])
+                }
+            } if serviceSummary else None,
             "style": {
                 "properties": {
                     "fill-pattern": "solid",
@@ -233,6 +254,12 @@ def createSheet(serviceName):
             }
         },
         "extensions": [],
+        "style": {
+            "properties": {
+                "multi-line-colors": "none",
+                "line-tapered": "none"
+            }
+        },
         "theme": {
             "centralTopic": {
                 "properties": {
@@ -417,12 +444,6 @@ def createSheet(serviceName):
                 "properties": {}
             },
             "skeletonThemeId": "db4a5df4db39a8cd1310ea55ea"
-        },
-        "style": {
-            "properties": {
-                "multi-line-colors": "none",
-                "line-tapered": "none"
-            }
         },
         "coreVersion": "2.54.0"
     }

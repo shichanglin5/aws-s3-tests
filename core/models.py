@@ -3,7 +3,6 @@ import itertools
 import json
 import os
 import re
-import uuid
 from threading import Thread
 
 import yaml
@@ -16,36 +15,21 @@ from loguru import logger
 from core import const
 from core.assertion import validateAssertions
 from core.loader import loadFileData
-from core.place_holder import resolvePlaceholderDict
+from core.place_holder import resolvePlaceholderDict, resolvePlaceHolder
 from core.predefind import predefinedFuncDict, newAnonymousClient, newAwsClient
+from core.utils import IgnoreNotSerializable
 
-GLOBAL_VARIABLES = {'uuid': uuid}
-
-
-# class SuiteCase(dict):
-#     def __init__(self, data):
-#         super().__init__(data)
-#         # self.name = name
-#         # self.order = order
-#         # self.operation = operation
-#         # self.clientName = clientName
-#         # self.parameters = parameters
-#         # self.assertion = assertion
-#         # self.suites = suites
-#
-#         self.order = None
-#         self.caseSuccess = None
-#         self.errorInfo = None
-#         self.hide = False
+GLOBAL_VARIABLES = {}
 
 
 class ServiceTestModel:
-    def __init__(self, serviceName, suiteFiles, identities, clientConfig, filterPattern):
+    def __init__(self, serviceName, suiteFiles, identities, clientConfig, includePatterns, excludePatterns):
         self.serviceName = serviceName
         self.suiteFiles = suiteFiles
         self.identities = identities
         self.clientConfig = clientConfig
-        self.filterPattern = filterPattern
+        self.suiteIncludePatterns = includePatterns
+        self.suiteExcludePatterns = excludePatterns
 
         self.clientDict = {}
         self.suiteModels = {}
@@ -96,114 +80,146 @@ class ServiceTestModel:
             except:
                 pass
 
-    def run(self):
-        for suiteFile, suiteModel in self.suiteModels.items():
-            for suite in suiteModel:
-                suiteId = next(self.idGenerator)
-                self.submitTask(self.doRun, [f'_{self.serviceName}_{suiteId}_', suite, {}])
-
-    def doRun(self, suiteId, suite, suiteLocals):
-        suiteState = const.STATE_INIT
-        suiteExecPath = suiteId
-
-        for case in suite:
-            caseName = case[const.CASE_OPERATION] if const.CASE_OPERATION in case else case[
-                const.CASE_NAME] if const.CASE_NAME else 'error[case name undefined]]'
-            currentSuiteExecPath = f'{suiteExecPath}::{caseName}'
-            ignore = const.HIDE in case and case[const.HIDE]
-
-            parameters = {}
-            suiteLocals[const.RESET_HOOKS] = []
-            try:
-                if self.filterPattern and not re.match(self.filterPattern, currentSuiteExecPath):
-                    # nonlocal suiteState
-                    if not suiteState & const.STATE_STARTED:
-                        suiteState = suiteState | const.STATE_SKIPPED
-                        self.suite_skipped.append(suite)
-                    logger.debug(f"Skipping Test ->  {currentSuiteExecPath}")
-                    return
-
-                if const.CASE_OPERATION not in case:
-                    if not ignore:
-                        suiteExecPath = currentSuiteExecPath
-                    continue
-
-                operationName = case[const.CASE_OPERATION]
-                opContext = None
-                clientName = None
-
-                if operationName in predefinedFuncDict.keys():
-                    caseLocals = suiteLocals.copy()
-                    if const.CASE_PARAMETERS in case:
-                        parameters = case[const.CASE_PARAMETERS]
-                    if const.CASE_CLIENT_NAME in case and (
-                            clientName := case[const.CASE_CLIENT_NAME]) in self.clientDict:
-                        serviceClient = self.clientDict[clientName]
-                        caseLocals['Client'] = serviceClient
-                        opContext = newContext(serviceClient.identityConfig, suiteLocals)
-                        resolvePlaceholderDict(parameters, opContext)
-                    else:
-                        opContext = newContext(suiteLocals)
-                        resolvePlaceholderDict(parameters, opContext)
-                    caseLocals.update(parameters)
-                    response = predefinedFuncDict[operationName](serviceModel=self, suiteLocals=suiteLocals,
-                                                                 caseLocals=caseLocals)
-
-                elif const.CASE_CLIENT_NAME in case and (clientName := case[const.CASE_CLIENT_NAME]) in self.clientDict \
-                        and operationName in (serviceClient := self.clientDict[clientName]).supportOperations:
-                    if const.CASE_PARAMETERS in case:
-                        parameters = case[const.CASE_PARAMETERS]
-                        opContext = newContext(serviceClient.identityConfig, suiteLocals)
-                        resolvePlaceholderDict(parameters, opContext)
-                    try:
-                        # noinspection PyProtectedMember
-                        response = BaseClient._make_api_call(serviceClient, operationName, parameters)
-                    except ClientError as e:
-                        response = e.response
-
-                else:
-                    raise RuntimeError(f'operation[{operationName}] undefined')
-
-                case[const.CASE_RESPONSE] = response
-                if not ignore:
-                    logger.debug(
-                        f"Response@{f'{clientName}@' if clientName else ''}{currentSuiteExecPath} => {response}")
-
-                if const.CASE_ASSERTION in case:
-                    assertion = case[const.CASE_ASSERTION]
-                    resolvePlaceholderDict(assertion, opContext)
-                    validateAssertions('response', assertion, response)
-                case[const.CASE_SUCCESS] = True
-
-                if not ignore:
-                    suiteExecPath = currentSuiteExecPath
-                suiteState = 1
-
-            except Exception as e:
-                case[const.CASE_SUCCESS] = False
-                case[const.ERROR_INFO] = f'{e.__class__.__name__}({json.dumps(e.args)})'
-                self.suite_failed.append(suite)
-                logger.exception(currentSuiteExecPath, e)
-                # terminate suite
-                return
-            finally:
-                resetHooks = suiteLocals[const.RESET_HOOKS]
-                for hook in resetHooks:
-                    hook()
-
-        if suiteState & const.STATE_SKIPPED:
-            return
-
-        # suite pass
-        self.suite_pass.append(suite)
-
     def submitTask(self, target, args):
         t = Thread(target=target, args=args)
         t.start()
         self.hooks.append(t.join)
 
+    def run(self):
+        try:
+            filteredSuites = self.filterSuites()
+        except Exception as e:
+            logger.exception(e)
+            return
+        for suiteFile, suiteModel in filteredSuites.items():
+            for suite in suiteModel:
+                suiteId = next(self.idGenerator)
+                self.submitTask(self.doRun, [f'_{suiteId}_{self.serviceName}', suite, copy.deepcopy(GLOBAL_VARIABLES)])
 
-def initServicesTestModels(config, filterPattern):
+    def filterSuites(self):
+        filteredSuites = self.suiteModels
+        if self.suiteIncludePatterns or self.suiteExcludePatterns:
+            filteredSuites = {}
+            for suiteFile, suiteModel in self.suiteModels.items():
+                filteredSuites[suiteFile] = []
+                for suite in suiteModel:
+                    fullPath = suiteFile
+                    midPath = suiteFile
+                    for case in suite:
+                        caseName = case[const.CASE_OPERATION] if const.CASE_OPERATION in case else case[const.CASE_TITLE]
+                        fullPath = '%s::%s' % (fullPath, caseName)
+                        if not (const.HIDE in case and case[const.HIDE]):
+                            midPath = '%s::%s' % (midPath, caseName)
+                    includePatternMatch = True
+                    if self.suiteIncludePatterns:
+                        includePatternMatch = False
+                        for suitePath in [fullPath, midPath]:
+                            for includePattern in self.suiteIncludePatterns:
+                                if not includePatternMatch and includePattern.match(suitePath):
+                                    includePatternMatch = True
+                                    break
+                    excludePatternMatch = False
+                    if self.suiteExcludePatterns:
+                        for suitePath in [fullPath, midPath]:
+                            for excludePattern in self.suiteExcludePatterns:
+                                if not excludePatternMatch and excludePattern.match(suitePath):
+                                    excludePatternMatch = True
+                                    break
+                    if includePatternMatch and not excludePatternMatch:
+                        filteredSuites[suiteFile].append(suite)
+                    else:
+                        self.suite_skipped.append(suite)
+        return filteredSuites
+
+    def doRun(self, suiteId, suite, suiteLocals):
+        suiteExecPath = suiteId
+        for case in suite:
+            caseName = case[const.CASE_OPERATION] if const.CASE_OPERATION in case else case[const.CASE_TITLE] if const.CASE_TITLE else 'error[case name undefined]]'
+            currentSuiteExecPath = f'{suiteExecPath}::{caseName}'
+            ignore = const.HIDE in case and case[const.HIDE]
+            parameters = {}
+
+            caseLocals = suiteLocals.copy()
+            caseLocals[const.RESET_HOOKS] = []
+            caseResponse = None
+            try:
+                if const.CASE_OPERATION not in case:
+                    if not ignore:
+                        suiteExecPath = currentSuiteExecPath
+                    continue
+
+                # client
+                operationName, clientName = case[const.CASE_OPERATION], None
+                if const.CASE_CLIENT_NAME in case:
+                    clientName = case[const.CASE_CLIENT_NAME]
+                    if clientName in self.clientDict:
+                        serviceClient = self.clientDict[clientName]
+                        caseLocals['Client'] = serviceClient
+                        caseLocals.update(serviceClient.identityConfig)
+
+                # parameters
+                if const.CASE_PARAMETERS in case:
+                    parameters = case[const.CASE_PARAMETERS]
+                    resolvePlaceholderDict(parameters, caseLocals)
+                    caseLocals.update(parameters)
+
+                # execute
+                if operationName in predefinedFuncDict.keys():
+                    caseResponse = predefinedFuncDict[operationName](serviceModel=self, suiteLocals=suiteLocals, caseLocals=caseLocals)
+                elif operationName in serviceClient.supportOperations:
+                    try:
+                        # noinspection PyProtectedMember
+                        caseResponse = BaseClient._make_api_call(serviceClient, operationName, parameters)
+                    except ClientError as e:
+                        caseResponse = e.response
+                else:
+                    raise RuntimeError(f'operation[{operationName}] undefined')
+
+                # update title
+                case[const.CASE_RESPONSE] = caseResponse
+                if 'ResponseMetadata' in caseResponse and 'HTTPStatusCode' in (responseMetadata := caseResponse['ResponseMetadata']):
+                    case[const.CASE_TITLE] = '%s-%s' % (operationName, responseMetadata['HTTPStatusCode'])
+
+                # log response
+                if not ignore:
+                    logger.debug(
+                        f"Response@{f'{clientName}@' if clientName else ''}{currentSuiteExecPath} => {caseResponse}")
+
+                # assertion
+                if const.CASE_ASSERTION in case:
+                    assertion = case[const.CASE_ASSERTION]
+                    resolvePlaceholderDict(assertion, caseLocals)
+                    validateAssertions('caseResponse', assertion, caseResponse)
+
+                # suite locals (resolve properties and put it into suiteLocals)
+                if const.SUITE_LOCALS in case and (caseSuiteLocals := case[const.SUITE_LOCALS]) and isinstance(caseSuiteLocals, dict):
+                    caseLocals.update(caseResponse)
+                    for key, value in caseSuiteLocals.items():
+                        suiteLocals[key] = resolvePlaceHolder(value, caseLocals)
+
+                if not ignore:
+                    suiteExecPath = currentSuiteExecPath
+
+                case[const.CASE_SUCCESS] = True
+            except Exception as e:
+                self.suite_failed.append(suite)
+                case[const.CASE_SUCCESS] = False
+                case[const.ERROR_INFO] = f'{e.__class__.__name__}({json.dumps(e.args, default=IgnoreNotSerializable)})'
+                if caseResponse:
+                    case[const.CASE_RESPONSE] = caseResponse
+                logger.exception(currentSuiteExecPath, e)
+                # terminate suite
+                return
+            finally:
+                resetHooks = caseLocals[const.RESET_HOOKS]
+                for hook in resetHooks:
+                    hook()
+
+        # suite pass
+        self.suite_pass.append(suite)
+
+
+def initServicesTestModels(config, includePatterns, excludePatterns):
     identities = config['identities']
     clientConfig = config['client_config']
 
@@ -216,6 +232,13 @@ def initServicesTestModels(config, filterPattern):
 
     if not os.path.exists(testsDir) or not os.path.isdir(testsDir):
         raise RuntimeError('tests dir must be a directory', testsDir)
+
+    if const.SUITE_FILTERS in config and (suiteFilters := config[const.SUITE_FILTERS]):
+        if const.INCLUDES in suiteFilters and (includes := suiteFilters[const.INCLUDES]):
+            includePatterns.extend([re.compile(includeStr) for s in includes if (includeStr := s.strip())])
+        if const.EXCLUDES in suiteFilters and (excludes := suiteFilters[const.EXCLUDES]):
+            excludePatterns.extend([re.compile(excludeStr) for s in excludes if (excludeStr := s.strip())])
+
     serviceModels = {}
     for serviceName in os.listdir(testsDir):
         if not os.path.isdir(os.path.join(testsDir, serviceName)):
@@ -229,16 +252,9 @@ def initServicesTestModels(config, filterPattern):
         if serviceName not in const.AWS_SERVICES:
             logger.debug("not a aws service: {}, ignored", serviceName)
             continue
-        testModel = ServiceTestModel(serviceName, suiteFiles, identities, clientConfig, filterPattern)
+        testModel = ServiceTestModel(serviceName, suiteFiles, identities, clientConfig, includePatterns, excludePatterns)
         serviceModels[serviceName] = testModel
     return serviceModels
-
-
-def newContext(*dicts):
-    requestContext = GLOBAL_VARIABLES.copy()
-    for dc in dicts:
-        requestContext.update(dc)
-    return requestContext
 
 
 def parseSuite(parentSuites: [], suites: dict):
@@ -256,7 +272,7 @@ def parseSuite(parentSuites: [], suites: dict):
             wrappedSuites = suiteWrapper
         for suiteName, suite in wrappedSuites.items():
             midSuites = copy.deepcopy(parentSuites) if parentSuites else [[]]
-            forkNode = {const.CASE_NAME: suiteName, const.ORDER: next(caseOrdinal)}
+            forkNode = {const.CASE_TITLE: suiteName, const.ORDER: next(caseOrdinal)}
             if ignore:
                 forkNode[const.HIDE] = True
             for midSuite in midSuites:
@@ -278,6 +294,7 @@ def parseSuite(parentSuites: [], suites: dict):
 
 
 def reportResult(serviceModels):
+    summary = {}
     for serviceName, serviceModel in serviceModels.items():
         # suiteFileTotal = len(serviceModel.suiteModels)
 
@@ -303,8 +320,19 @@ def reportResult(serviceModels):
                         caseSkippedCount += 1
                     caseTotal += 1
         apiInvokedCount += serviceModel.extra_case_api_invoked_count
+        summary[serviceName] = {
+            'suiteTotal': suiteTotal,
+            'suitePassCount': suitePassCount,
+            'suiteFailedCount': suiteFailedCount,
+            'suiteSkippedCount': suiteSkippedCount,
+            'caseTotal': caseTotal,
+            'casePassCount': casePassCount,
+            'caseFailedCount': caseFailedCount,
+            'caseSkippedCount': caseSkippedCount,
+            'apiInvokedCount': apiInvokedCount
+        }
 
-        summary = f"{str(serviceName).upper()}: " \
+        message = f"{str(serviceName).upper()}: " \
                   f"Suite [TOTAL: {suiteTotal}, " \
                   f"PASS: {suitePassCount}, " \
                   f"FAILED: {suiteFailedCount}, " \
@@ -316,6 +344,7 @@ def reportResult(serviceModels):
                   f"API_INVOKED: {apiInvokedCount}]"
 
         if suiteFailedCount:
-            logger.error(summary)
+            logger.error(message)
         else:
-            logger.info(summary)
+            logger.info(message)
+        return summary

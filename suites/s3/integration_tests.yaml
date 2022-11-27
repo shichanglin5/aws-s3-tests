@@ -22,7 +22,7 @@ IntegrationTests:
           assertion:
             ResponseMetadata.HTTPStatusCode: 200
           suites:
-            DuplicateCreateBucket:
+            DuplicateCreate:
               - operation: CreateBucket
                 clientName: 'admin'
                 parameters:
@@ -32,14 +32,7 @@ IntegrationTests:
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 409
                   Error.Code: 'BucketAlreadyOwnedByYou'
-            BucketApiTests:
-              - operation: GetBucketOwnershipControls
-                clientName: 'admin'
-                parameters:
-                  Bucket: '${Bucket}'
-                assertion:
-                  ResponseMetadata.HTTPStatusCode: 404
-                  Error.Code: 'OwnershipControlsNotFoundError'
+            ACL-Tests:
               - operation: GetBucketAcl
                 clientName: 'admin'
                 parameters:
@@ -52,41 +45,183 @@ IntegrationTests:
                         ID: '${account_id}'
                         Type: 'CanonicalUser'
                       Permission: 'FULL_CONTROL'
+            OwnershipControls:
               - operation: GetBucketOwnershipControls
-                clientName: 'anonymous'
+                clientName: 'admin'
                 parameters:
                   Bucket: '${Bucket}'
                 assertion:
-                  ResponseMetadata.HTTPStatusCode: 403
-                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
-              - operation: GetBucketAcl
-                clientName: 'anonymous'
-                parameters:
-                  Bucket: '${Bucket}'
-                assertion:
-                  ResponseMetadata.HTTPStatusCode: 403
-                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+                  ResponseMetadata.HTTPStatusCode: 404
+                  Error.Code: 'OwnershipControlsNotFoundError'
+                suites:
+                  AnonymousDenied:
+                    - operation: GetBucketOwnershipControls
+                      clientName: 'anonymous'
+                      parameters:
+                        Bucket: '${Bucket}'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 403
+                        Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+                    - operation: PutBucketOwnershipControls
+                      clientName: 'anonymous'
+                      parameters:
+                        Bucket: '${Bucket}'
+                        OwnershipControls:
+                          Rules:
+                            - ObjectOwnership: 'ObjectWriter'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 403
+                        Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+                  ObjectWriter:
+                    - operation: PutBucketOwnershipControls
+                      clientName: 'admin'
+                      parameters:
+                        Bucket: '${Bucket}'
+                        OwnershipControls:
+                          Rules:
+                            - ObjectOwnership: 'ObjectWriter'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 200
+                    - operation: GetBucketOwnershipControls
+                      clientName: 'admin'
+                      parameters:
+                        Bucket: '${Bucket}'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 200
+                        OwnershipControls.Rules:
+                          - ObjectOwnership: 'ObjectWriter'
+                  BucketOwnerPreferred:
+                    - operation: PutBucketOwnershipControls
+                      clientName: 'admin'
+                      parameters:
+                        Bucket: '${Bucket}'
+                        OwnershipControls:
+                          Rules:
+                            - ObjectOwnership: 'BucketOwnerPreferred'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 200
+                    - operation: GetBucketOwnershipControls
+                      clientName: 'admin'
+                      parameters:
+                        Bucket: '${Bucket}'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 200
+                        OwnershipControls.Rules:
+                          - ObjectOwnership: 'BucketOwnerPreferred'
+                  BucketOwnerEnforced:
+                    - operation: PutBucketOwnershipControls
+                      clientName: 'admin'
+                      parameters:
+                        Bucket: '${Bucket}'
+                        OwnershipControls:
+                          Rules:
+                            - ObjectOwnership: 'BucketOwnerEnforced'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 200
+                    - operation: GetBucketOwnershipControls
+                      clientName: 'admin'
+                      parameters:
+                        Bucket: '${Bucket}'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 200
+                        OwnershipControls.Rules:
+                          - ObjectOwnership: 'BucketOwnerEnforced'
             ObjectApis:
               - operation: GenerateObjectKey
                 __hide__: true
                 parameters:
                   Prefix: '/hello/world'
-              - operation: PutObject
-                clientName: 'admin'
-                parameters:
-                  Bucket: '${Bucket}'
-                  Key: '${Key}'
-                  Body: '@{bytearray(1024)}'
-                assertion:
-                  ResponseMetadata.HTTPStatusCode: 200
-                  ETag: '"0f343b0931126a20f133d67c2b018a3b"'
-              - operation: GetObject
-                clientName: 'admin'
-                parameters:
-                  Bucket: '${Bucket}'
-                  Key: '${Key}'
-                assertion:
-                  ResponseMetadata.HTTPStatusCode: 200
+              - suites:
+                  PutObject:
+                    - operation: PutObject
+                      clientName: 'admin'
+                      parameters:
+                        Bucket: '${Bucket}'
+                        Key: '${Key}'
+                        Body: '@{bytearray(1024)}'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 200
+                        ETag: '"0f343b0931126a20f133d67c2b018a3b"'
+                    - operation: GetObject
+                      clientName: 'admin'
+                      parameters:
+                        Bucket: '${Bucket}'
+                        Key: '${Key}'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 200
+                  MultiPartUpload:
+                    - operation: CreateMultipartUpload
+                      clientName: 'admin'
+                      parameters:
+                        Bucket: '${Bucket}'
+                        Key: '${Key}'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 200
+                      suiteLocals:
+                        UploadId: '${UploadId}'
+                    - operation: UploadPart
+                      clientName: 'admin'
+                      parameters:
+                        Bucket: '${Bucket}'
+                        Key: '${Key}'
+                        UploadId: '${UploadId}'
+                        PartNumber: 1
+                        Body: '@{bytearray(5*1024*1024)}'
+                        ContentLength: '@{5*1024*1024}'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 200
+                      suiteLocals:
+                        etag_1: '${ETag}'
+                    - operation: UploadPart
+                      clientName: 'admin'
+                      parameters:
+                        Bucket: '${Bucket}'
+                        Key: '${Key}'
+                        UploadId: '${UploadId}'
+                        PartNumber: 2
+                        Body: '@{bytearray(5*1024*1024)}'
+                        ContentLength: '@{5*1024*1024}'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 200
+                      suiteLocals:
+                        etag_2: '${ETag}'
+                    - operation: ListParts
+                      clientName: 'admin'
+                      parameters:
+                        Bucket: '${Bucket}'
+                        Key: '${Key}'
+                        UploadId: '${UploadId}'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 200
+                        Parts:
+                          - PartNumber: 1
+                            ETag: '${etag_1}'
+                          - PartNumber: 2
+                            ETag: '${etag_2}'
+                    - operation: CompleteMultipartUpload
+                      clientName: 'admin'
+                      parameters:
+                        Bucket: '${Bucket}'
+                        Key: '${Key}'
+                        UploadId: '${UploadId}'
+                        MultipartUpload:
+                          Parts:
+                            - PartNumber: 1
+                              ETag: '${etag_1}'
+                            - PartNumber: 2
+                              ETag: '${etag_2}'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 200
+                      suiteLocals:
+                        ETag: '${ETag}'
+                    - operation: GetObject
+                      clientName: 'admin'
+                      parameters:
+                        Bucket: '${Bucket}'
+                        Key: '${Key}'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 200
+                        ETag: '${ETag}'
       Ownership-ObjectWriter:
         - suites:
             ACL-None:
@@ -961,85 +1096,6 @@ IntegrationTests:
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 404
                   Error.Code: 'NoSuchBucket'
-  - suites:
-      __hide__:
-        CleanOps:
-          - operation: DeleteBucket
-            clientName: 'admin'
-            parameters:
-              Bucket: '${Bucket}'
-BucketOwnershipControls:
-  - suites:
-      __hide__:
-        PrepareOps:
-          - operation: GenerateBucketName
-          - operation: DeleteObjects
-            clientName: 'admin'
-            parameters:
-              Bucket: '${Bucket}'
-          - operation: DeleteBucket
-            clientName: 'admin'
-            parameters:
-              Bucket: '${Bucket}'
-          - operation: CreateBucket
-            clientName: 'admin'
-            parameters:
-              Bucket: '${Bucket}'
-              CreateBucketConfiguration:
-                LocationConstraint: '${region_name}'
-            assertion:
-              ResponseMetadata.HTTPStatusCode: 200
-  - operation: PutBucketOwnershipControls
-    clientName: 'admin'
-    parameters:
-      Bucket: '${Bucket}'
-      OwnershipControls:
-        Rules:
-          - ObjectOwnership: 'ObjectWriter'
-    assertion:
-      ResponseMetadata.HTTPStatusCode: 200
-  - operation: GetBucketOwnershipControls
-    clientName: 'admin'
-    parameters:
-      Bucket: '${Bucket}'
-    assertion:
-      ResponseMetadata.HTTPStatusCode: 200
-      OwnershipControls:
-        Rules:
-          - ObjectOwnership: 'ObjectWriter'
-  - operation: PutBucketAcl
-    clientName: 'admin'
-    parameters:
-      Bucket: '${Bucket}'
-      ACL: public-read
-    assertion:
-      ResponseMetadata.HTTPStatusCode: 200
-  - operation: PutBucketOwnershipControls
-    clientName: 'admin'
-    parameters:
-      Bucket: '${Bucket}'
-      OwnershipControls:
-        Rules:
-          - ObjectOwnership: 'ObjectWriter'
-    assertion:
-      ResponseMetadata.HTTPStatusCode: 200
-  - operation: GetBucketAcl
-    clientName: 'anonymous'
-    parameters:
-      Bucket: '${Bucket}'
-    assertion:
-      ResponseMetadata.HTTPStatusCode: 403
-      Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
-  - operation: PutBucketOwnershipControls
-    clientName: 'anonymous'
-    parameters:
-      Bucket: '${Bucket}'
-      OwnershipControls:
-        Rules:
-          - ObjectOwnership: 'ObjectWriter'
-    assertion:
-      ResponseMetadata.HTTPStatusCode: 403
-      Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
   - suites:
       __hide__:
         CleanOps:

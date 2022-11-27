@@ -1,7 +1,7 @@
 # named variables
 CASE_SUCCESS = '__case_success__'
 CASE_OPERATION = 'operation'
-CASE_NAME = 'name'
+CASE_TITLE = 'title'
 CASE_PARAMETERS = 'parameters'
 CASE_ASSERTION = 'assertion'
 CASE_SUITES = 'suites'
@@ -12,17 +12,15 @@ ORDER = '__order__'
 SUITE_STATE_START = 1
 SUITE_STATE_SKIPPED = 1 << 1
 EXPORTERS = 'exporters'
-ERROR_INFO = 'error_info'
-
+ERROR_INFO = 'errorInfo'
 ANONYMOUS = 'anonymous'
-
 INCLUDE_FIELDS = 'include_fields'
+SUITE_LOCALS = 'suiteLocals'
+SUITE_FILTERS = 'suite_filters'
+INCLUDES = 'includes'
+EXCLUDES = 'excludes'
 
 HIDE = '__hide__'
-STATE_INIT = 0
-STATE_STARTED = 1
-STATE_SKIPPED = 1 << 1
-STATE_FAILED = 1 << 2
 RESET_HOOKS = 'resetHooks'
 
 CLIENT_PROPERTIES = ['service_name', 'region_name', 'api_version', 'use_ssl', 'verify', 'endpoint_url',

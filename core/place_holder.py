@@ -59,16 +59,14 @@ def resolvePlaceHolderArr(valueArray, context):
             raise RuntimeError('Unsupported parameter', value)
 
 
-def resolvePlaceHolder(value, context):
+def resolvePlaceHolder(arg, context):
     for pattern, handler in PLACE_HOLDER_HANDLERS.items():
-        for placeHolder, paramName in set(pattern.findall(value)):
+        for placeHolder, paramName in set(pattern.findall(arg)):
             paramValue = handler(paramName, context)
-            if placeHolder == value:
-                if paramValue is None:
-                    return None
-                return paramValue
+            if placeHolder == arg:
+                return arg if paramValue is None else paramValue
             else:
                 if paramValue is None:
                     paramValue = ''
-                value = value.replace(placeHolder, str(paramValue))
-    return value
+                arg = arg.replace(placeHolder, str(paramValue))
+    return arg
