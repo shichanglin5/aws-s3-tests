@@ -132,8 +132,7 @@ IntegrationTests:
                 parameters:
                   Prefix: '/hello/world'
               - suites:
-                  PutObject:
-                    - operation: PutObject
+                  - - operation: PutObject
                       clientName: 'admin'
                       parameters:
                         Bucket: '${Bucket}'
@@ -149,8 +148,7 @@ IntegrationTests:
                         Key: '${Key}'
                       assertion:
                         ResponseMetadata.HTTPStatusCode: 200
-                  MultiPartUpload:
-                    - operation: CreateMultipartUpload
+                  - - operation: CreateMultipartUpload
                       clientName: 'admin'
                       parameters:
                         Bucket: '${Bucket}'
@@ -234,40 +232,41 @@ IntegrationTests:
                   ObjectOwnership: 'ObjectWriter'
                 assertion:
                   ResponseMetadata.HTTPStatusCode: 200
-              - operation: GetBucketOwnershipControls
-                clientName: 'admin'
-                parameters:
-                  Bucket: '${Bucket}'
-                assertion:
-                  ResponseMetadata.HTTPStatusCode: 200
-                  OwnershipControls.Rules:
-                    - ObjectOwnership: 'ObjectWriter'
-              - operation: GetBucketAcl
-                clientName: 'admin'
-                parameters:
-                  Bucket: '${Bucket}'
-                assertion:
-                  ResponseMetadata.HTTPStatusCode: 200
-                  Owner.ID: '${account_id}'
-                  Grants:
-                    - Grantee:
-                        ID: '${account_id}'
-                        Type: 'CanonicalUser'
-                      Permission: 'FULL_CONTROL'
-              - operation: GetBucketOwnershipControls
-                clientName: 'anonymous'
-                parameters:
-                  Bucket: '${Bucket}'
-                assertion:
-                  ResponseMetadata.HTTPStatusCode: 403
-                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
-              - operation: GetBucketAcl
-                clientName: 'anonymous'
-                parameters:
-                  Bucket: '${Bucket}'
-                assertion:
-                  ResponseMetadata.HTTPStatusCode: 403
-                  Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+                suites:
+                  - - operation: GetBucketOwnershipControls
+                      clientName: 'admin'
+                      parameters:
+                        Bucket: '${Bucket}'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 200
+                        OwnershipControls.Rules:
+                          - ObjectOwnership: 'ObjectWriter'
+                    - operation: GetBucketAcl
+                      clientName: 'admin'
+                      parameters:
+                        Bucket: '${Bucket}'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 200
+                        Owner.ID: '${account_id}'
+                        Grants:
+                          - Grantee:
+                              ID: '${account_id}'
+                              Type: 'CanonicalUser'
+                            Permission: 'FULL_CONTROL'
+                  - - operation: GetBucketOwnershipControls
+                      clientName: 'anonymous'
+                      parameters:
+                        Bucket: '${Bucket}'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 403
+                        Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
+                    - operation: GetBucketAcl
+                      clientName: 'anonymous'
+                      parameters:
+                        Bucket: '${Bucket}'
+                      assertion:
+                        ResponseMetadata.HTTPStatusCode: 403
+                        Error.Code: 'AccessDenied' # 'Message': 'Access Denied'
             CannedACL-Private:
               - operation: CreateBucket
                 clientName: 'admin'

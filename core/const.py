@@ -5,6 +5,8 @@ CASE_TITLE = 'title'
 CASE_PARAMETERS = 'parameters'
 CASE_ASSERTION = 'assertion'
 CASE_SUITES = 'suites'
+CASE_SUITES_ARR = 'suites_arr'
+CASE_SUITES_DICT = 'suites_dict'
 CASE_CLIENT_NAME = 'clientName'
 CASE_RESPONSE = 'response'
 
@@ -21,6 +23,8 @@ INCLUDES = 'includes'
 EXCLUDES = 'excludes'
 
 HIDE = '__hide__'
+HIDE_ENABLED = 'hide_enabled'
+NOT_HIDE = '__not_hide__'
 RESET_HOOKS = 'resetHooks'
 
 CLIENT_PROPERTIES = ['service_name', 'region_name', 'api_version', 'use_ssl', 'verify', 'endpoint_url',

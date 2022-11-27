@@ -81,20 +81,21 @@ class XmindExporter(Exporter):
         for serviceName, serviceModel in serviceModels.items():
             sheet, subTopics = createSheet(serviceName, self.summary[serviceName])
             # logger.info(json.dumps(serviceModel.suite_pass))
-            self.appendTopics(subTopics, 'PASS', serviceModel.suite_pass, "#15831C")
-            self.appendTopics(subTopics, 'FAILED', serviceModel.suite_failed, "#E32C2D")
-            self.appendTopics(subTopics, 'SKIPPED', serviceModel.suite_skipped, "#D0D0D0")
+            hideEnabled = serviceModel.hideEnabled
+            self.appendTopics(subTopics, hideEnabled, 'PASS', serviceModel.suite_pass, "#15831C")
+            self.appendTopics(subTopics, hideEnabled, 'FAILED', serviceModel.suite_failed, "#E32C2D")
+            self.appendTopics(subTopics, hideEnabled, 'SKIPPED', serviceModel.suite_skipped, "#D0D0D0")
             content.append(sheet)
         return content
 
-    def appendTopics(self, subTopics, topicTitle, suites, lineColor):
+    def appendTopics(self, subTopics, hideEnabled, topicTitle, suites, lineColor):
         caseTree, caseNodes = {}, []
         var_parent, var_data, var_nodes, var_tree = 'parent', 'data', 'nodes', 'tree'
         for suite in suites:
             mid, midTree, midNodes = None, caseTree, caseNodes
             for case in suite:
                 ignoreCase, caseFailed = False, False
-                if const.HIDE in case and case[const.HIDE]:
+                if hideEnabled and const.HIDE in case and case[const.HIDE]:
                     ignoreCase = True
                 if const.CASE_OPERATION not in case:
                     if ignoreCase:

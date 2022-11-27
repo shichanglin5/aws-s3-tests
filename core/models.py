@@ -23,13 +23,14 @@ GLOBAL_VARIABLES = {}
 
 
 class ServiceTestModel:
-    def __init__(self, serviceName, suiteFiles, identities, clientConfig, includePatterns, excludePatterns):
+    def __init__(self, serviceName, suiteFiles, identities, clientConfig, includePatterns, excludePatterns, hideEnabled):
         self.serviceName = serviceName
         self.suiteFiles = suiteFiles
         self.identities = identities
         self.clientConfig = clientConfig
         self.suiteIncludePatterns = includePatterns
         self.suiteExcludePatterns = excludePatterns
+        self.hideEnabled = hideEnabled
 
         self.clientDict = {}
         self.suiteModels = {}
@@ -136,7 +137,7 @@ class ServiceTestModel:
         for case in suite:
             caseName = case[const.CASE_OPERATION] if const.CASE_OPERATION in case else case[const.CASE_TITLE] if const.CASE_TITLE else 'error[case name undefined]]'
             currentSuiteExecPath = f'{suiteExecPath}::{caseName}'
-            ignore = const.HIDE in case and case[const.HIDE]
+            ignore = self.hideEnabled and const.HIDE in case and case[const.HIDE]
             parameters = {}
 
             caseLocals = suiteLocals.copy()
@@ -239,6 +240,10 @@ def initServicesTestModels(config, includePatterns, excludePatterns):
         if const.EXCLUDES in suiteFilters and (excludes := suiteFilters[const.EXCLUDES]):
             excludePatterns.extend([re.compile(excludeStr) for s in excludes if (excludeStr := s.strip())])
 
+    hideEnabled = True
+    if const.HIDE_ENABLED in config:
+        hideEnabled = config[const.HIDE_ENABLED]
+
     serviceModels = {}
     for serviceName in os.listdir(testsDir):
         if not os.path.isdir(os.path.join(testsDir, serviceName)):
@@ -252,44 +257,66 @@ def initServicesTestModels(config, includePatterns, excludePatterns):
         if serviceName not in const.AWS_SERVICES:
             logger.debug("not a aws service: {}, ignored", serviceName)
             continue
-        testModel = ServiceTestModel(serviceName, suiteFiles, identities, clientConfig, includePatterns, excludePatterns)
+        testModel = ServiceTestModel(serviceName, suiteFiles, identities, clientConfig, includePatterns, excludePatterns, hideEnabled)
         serviceModels[serviceName] = testModel
     return serviceModels
 
 
-def parseSuite(parentSuites: [], suites: dict):
+def parseSuite(parentSuites: [], suites: (dict, list) = None, hideSub=False):
     if suites is None:
         return parentSuites
-    if not isinstance(suites, dict):
-        raise ValueError('suite_nodes must be a dict')
+    if not isinstance(suites, (list, dict)):
+        raise TypeError('suites: (dict, list)')
+
+    # init
+    if hideSub is None:
+        hideSub = False
+    if parentSuites is None:
+        parentSuites = []
+    suiteList = []
+    if isinstance(suites, dict):
+        for suiteWrapperName, suiteWrapper in suites.items():
+            wrappedSuites = {suiteWrapperName: suiteWrapper}
+            hide = hideSub
+            if suiteWrapperName == const.NOT_HIDE:
+                hide = False
+                wrappedSuites = suiteWrapper
+            elif suiteWrapperName == const.HIDE:
+                hide = True
+                wrappedSuites = suiteWrapper
+            caseOrdinal = itertools.count(0)
+            for suiteName, suite in wrappedSuites.items():
+                forkNode = {const.CASE_TITLE: suiteName, const.ORDER: next(caseOrdinal)}
+                newSuite = [forkNode]
+                if hide:
+                    forkNode[const.HIDE] = True
+                    for suiteCase in suite:
+                        suiteCase[const.HIDE] = True
+                        newSuite.append(suiteCase)
+                else:
+                    newSuite.extend(suite)
+                suiteList.append(newSuite)
+    else:
+        suiteList = suites
+        if hideSub:
+            for suiteCase in suiteList:
+                suiteCase[const.HIDE] = True
+
+    # fork
     resultSuites = []
-    caseOrdinal = itertools.count(0)
-    for suiteWrapperName, suiteWrapper in suites.items():
-        wrappedSuites = {suiteWrapperName: suiteWrapper}
-        ignore = False
-        if suiteWrapperName == const.HIDE:
-            ignore = True
-            wrappedSuites = suiteWrapper
-        for suiteName, suite in wrappedSuites.items():
-            midSuites = copy.deepcopy(parentSuites) if parentSuites else [[]]
-            forkNode = {const.CASE_TITLE: suiteName, const.ORDER: next(caseOrdinal)}
-            if ignore:
-                forkNode[const.HIDE] = True
-            for midSuite in midSuites:
-                midSuite.append(forkNode)
-            for suiteCase in suite:
-                if ignore:
-                    suiteCase[const.HIDE] = True
-                suiteCaseCopy = copy.deepcopy(suiteCase)
-                midPath: str
-                if const.CASE_OPERATION in suiteCase:
-                    for midSuite in midSuites:
-                        midSuite.append(suiteCaseCopy)
-                if const.CASE_SUITES in suiteCase:
-                    subSuites = suiteCase[const.CASE_SUITES]
-                    del suiteCase[const.CASE_SUITES]
-                    midSuites = parseSuite(midSuites, subSuites)
-            resultSuites.extend(midSuites)
+    for suite in suiteList:
+        midSuites = copy.deepcopy(parentSuites) if parentSuites else [[]]
+        for suiteCase in suite:
+            if const.CASE_TITLE in suiteCase or const.CASE_OPERATION in suiteCase:
+                for midSuite in midSuites:
+                    suiteCaseCopy = copy.deepcopy(suiteCase)
+                    midSuite.append(suiteCaseCopy)
+            if const.CASE_SUITES in suiteCase:
+                subSuites = suiteCase[const.CASE_SUITES]
+                del suiteCase[const.CASE_SUITES]
+                caseHideSub = const.HIDE in suiteCase and suiteCase[const.HIDE]
+                midSuites = parseSuite(midSuites, subSuites, caseHideSub)
+        resultSuites.extend(midSuites)
     return resultSuites
 
 
