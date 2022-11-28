@@ -94,7 +94,7 @@ class XmindExporter(Exporter):
         for suite in suites:
             mid, midTree, midNodes = None, caseTree, caseNodes
             for case in suite:
-                ignoreCase, caseFailed = False, False
+                ignoreCase, caseSkipped, caseFailed = False, True, False
                 if hideEnabled and const.HIDE in case and case[const.HIDE]:
                     ignoreCase = True
                 if const.CASE_OPERATION not in case:
@@ -120,6 +120,7 @@ class XmindExporter(Exporter):
                         "fo:color": "#000000FF",
                     }
                 else:
+                    caseSkipped = False
                     if case[const.CASE_SUCCESS]:
                         if ignoreCase:
                             continue
@@ -145,12 +146,13 @@ class XmindExporter(Exporter):
                 if title in midTree:
                     mid = midTree[title]
                     midTree, midNodes, midData = mid[var_tree], mid[var_nodes], mid[var_data]
-                    if var_notes in midData:
+                    clearNotes = not caseSkipped and not caseFailed
+                    if clearNotes and var_notes in midData:
                         del midData[var_notes]
                     if var_parent in mid:
                         parentNode = mid[var_parent]
                         while parentNode:
-                            if var_data in parentNode:
+                            if clearNotes and var_data in parentNode:
                                 parentNodeData = parentNode[var_data]
                                 if 'note' in parentNodeData:
                                     del parentNode['note']
@@ -178,12 +180,12 @@ class XmindExporter(Exporter):
                     ] if caseFailed else None,
                     var_notes: {
                         "plain": {
-                            "content": '\n\n'.join(itr) if (
+                            "content": json.dumps(case, default=IgnoreNotSerializable) if caseSkipped else ('\n\n'.join(itr) if (
                                 itr := ['### %s ###\n%s' % (
                                     str(field).capitalize(), fieldValue if isinstance(fieldValue, (numbers.Number, str)) else json.dumps(fieldValue, default=IgnoreNotSerializable))
-                                        for field in self.includeFields if field in case and (fieldValue := case[field])]) else None
+                                        for field in self.includeFields if field in case and (fieldValue := case[field])]) else None)
                         }
-                    } if self.includeFields and [field for field in self.includeFields if field in case] else None
+                    } if caseSkipped or self.includeFields and [field for field in self.includeFields if field in case] else None
                 }
                 newNode = {var_parent: mid, var_data: newCaseData, var_tree: newSubTree, var_nodes: newSubNodes}
 

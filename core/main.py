@@ -36,6 +36,9 @@ def main(args: []):
     config = loadConfig()
     includePatterns, excludePatterns = parseFilterPatterns(args)
     sms = initServicesTestModels(config, includePatterns, excludePatterns)
+    if len(sms) == 0:
+        logger.info("No serviceModels loaded.")
+        return
 
     for serviceName, serviceModel in sms.items():
         logger.info(f'Run ServiceModel: {serviceName}')

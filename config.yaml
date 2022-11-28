@@ -1,4 +1,8 @@
 tests_dir: './suites'
+#load_xmind_suites: false
+#load_yaml_suites: true
+load_xmind_suites: true
+load_yaml_suites: false
 client_config:
   region_name: 'ap-southeast-1'
 identities:
@@ -13,5 +17,12 @@ global_variables:
   group_authenticated_users_url: 'http://acs.amazonaws.com/groups/global/AuthenticatedUsers'
 exporters:
   xmind:
-    file_path: exports/aws_tests.xmind
-    include_fields: ['parameters', 'assertion', 'response', 'errorInfo']
+    file_path: .wd/xmind_exports/aws_tests.xmind
+    include_fields: [ 'parameters', 'assertion', 'response', 'errorInfo' ]
+hide_enabled: true
+suite_filters:
+  includes:
+    - '.*AbortMultipartUpload.*'
+  #    - '.*Ownership-ObjectWriter.*'
+  excludes:
+#    - '.*'

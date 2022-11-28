@@ -14,7 +14,7 @@ from loguru import logger
 
 from core import const
 from core.assertion import validateAssertions
-from core.loader import loadFileData
+from core.loader import loadFileData, loadXmindData
 from core.place_holder import resolvePlaceholderDict, resolvePlaceHolder
 from core.predefind import predefinedFuncDict, newAnonymousClient, newAwsClient
 from core.utils import IgnoreNotSerializable
@@ -23,7 +23,7 @@ GLOBAL_VARIABLES = {}
 
 
 class ServiceTestModel:
-    def __init__(self, serviceName, suiteFiles, identities, clientConfig, includePatterns, excludePatterns, hideEnabled):
+    def __init__(self, serviceName, suiteFiles, identities, clientConfig, includePatterns, excludePatterns, hideEnabled, xmindSuites):
         self.serviceName = serviceName
         self.suiteFiles = suiteFiles
         self.identities = identities
@@ -31,6 +31,7 @@ class ServiceTestModel:
         self.suiteIncludePatterns = includePatterns
         self.suiteExcludePatterns = excludePatterns
         self.hideEnabled = hideEnabled
+        self.xmindSuites = xmindSuites
 
         self.clientDict = {}
         self.suiteModels = {}
@@ -43,11 +44,14 @@ class ServiceTestModel:
         self.extra_case_api_invoked_count = 0
 
     def setUp(self):
-        for suiteFile in self.suiteFiles:
-            suiteData = loadFileData(suiteFile, yaml.safe_load)
-            # don't present filename in result tree
-            # self.suiteModels[suiteFile] = parseSuite([[{const.CASE_NAME:suiteFile}]], suiteData)
-            self.suiteModels[suiteFile] = parseSuite([[]], suiteData)
+        if self.xmindSuites is not None:
+            self.suiteModels[const.XMIND_SUITES] = parseSuite([[]], self.xmindSuites)
+        if self.suiteFiles is not None:
+            for suiteFile in self.suiteFiles:
+                suiteData = loadFileData(suiteFile, yaml.safe_load)
+                # don't present filename in result tree
+                # self.suiteModels[suiteFile] = parseSuite([[{const.CASE_NAME:suiteFile}]], suiteData)
+                self.suiteModels[suiteFile] = parseSuite([[]], suiteData)
         self.clientDict = {}
         for identityName, identityConfig in self.identities.items():
             for prop in identityConfig:
@@ -178,7 +182,7 @@ class ServiceTestModel:
 
                 # update title
                 case[const.CASE_RESPONSE] = caseResponse
-                if 'ResponseMetadata' in caseResponse and 'HTTPStatusCode' in (responseMetadata := caseResponse['ResponseMetadata']):
+                if const.CASE_ASSERTION in case and 'ResponseMetadata' in caseResponse and 'HTTPStatusCode' in (responseMetadata := caseResponse['ResponseMetadata']):
                     case[const.CASE_TITLE] = '%s-%s' % (operationName, responseMetadata['HTTPStatusCode'])
 
                 # log response
@@ -245,20 +249,38 @@ def initServicesTestModels(config, includePatterns, excludePatterns):
         hideEnabled = config[const.HIDE_ENABLED]
 
     serviceModels = {}
-    for serviceName in os.listdir(testsDir):
-        if not os.path.isdir(os.path.join(testsDir, serviceName)):
-            continue
-        suiteFiles = []
-        serviceDir = os.path.join(testsDir, serviceName)
-        for testFile in os.listdir(serviceDir):
-            filePath = os.path.join(serviceDir, testFile)
-            if os.path.isfile(filePath) and testFile.endswith(".yaml"):
-                suiteFiles.append(filePath)
-        if serviceName not in const.AWS_SERVICES:
-            logger.debug("not a aws service: {}, ignored", serviceName)
-            continue
-        testModel = ServiceTestModel(serviceName, suiteFiles, identities, clientConfig, includePatterns, excludePatterns, hideEnabled)
-        serviceModels[serviceName] = testModel
+    # load xmind cases
+    xmindSuites = {}
+    if const.LOAD_XMIND_SUITES in config and config[const.LOAD_XMIND_SUITES] and \
+            (xmindFiles := [xmindFile for file in os.listdir(testsDir) if (xmindFile := os.path.join(testsDir, file)) and os.path.isfile(xmindFile) and file.endswith('.xmind')]) and xmindFiles:
+        for xmindFile in xmindFiles:
+            servicesSuites = loadXmindData(xmindFile)
+            for serviceName, serviceSuite in servicesSuites.items():
+                if serviceName not in xmindSuites:
+                    xmindSuites[serviceName] = []
+                xmindSuites[serviceName].extend(serviceSuite)
+    # load yaml files
+    serviceYamlFiles = {}
+    if const.LOAD_YAML_SUITES in config and config[const.LOAD_YAML_SUITES]:
+        for serviceName in os.listdir(testsDir):
+            if not os.path.isdir(os.path.join(testsDir, serviceName)):
+                continue
+            suiteFiles = []
+            serviceDir = os.path.join(testsDir, serviceName)
+            for testFile in os.listdir(serviceDir):
+                filePath = os.path.join(serviceDir, testFile)
+                if os.path.isfile(filePath) and testFile.endswith(".yaml"):
+                    suiteFiles.append(filePath)
+            if serviceName not in const.AWS_SERVICES:
+                logger.debug("not a aws service: {}, ignored", serviceName)
+                continue
+            serviceYamlFiles[serviceName] = suiteFiles
+
+    for serviceName in itertools.chain(xmindSuites.keys(), serviceYamlFiles.keys()):
+        serviceModels[serviceName] = ServiceTestModel(serviceName,
+                                                      serviceYamlFiles[serviceName] if serviceName in serviceYamlFiles else None,
+                                                      identities, clientConfig, includePatterns, excludePatterns, hideEnabled,
+                                                      xmindSuites[serviceName] if serviceName in xmindSuites else None)
     return serviceModels
 
 
@@ -284,9 +306,8 @@ def parseSuite(parentSuites: [], suites: (dict, list) = None, hideSub=False):
             elif suiteWrapperName == const.HIDE:
                 hide = True
                 wrappedSuites = suiteWrapper
-            caseOrdinal = itertools.count(0)
             for suiteName, suite in wrappedSuites.items():
-                forkNode = {const.CASE_TITLE: suiteName, const.ORDER: next(caseOrdinal)}
+                forkNode = {const.CASE_TITLE: suiteName}
                 newSuite = [forkNode]
                 if hide:
                     forkNode[const.HIDE] = True
@@ -299,21 +320,28 @@ def parseSuite(parentSuites: [], suites: (dict, list) = None, hideSub=False):
     else:
         suiteList = suites
         if hideSub:
-            for suiteCase in suiteList:
-                suiteCase[const.HIDE] = True
+            for suiteCases in suiteList:
+                for suiteCase in suiteCases:
+                    if const.HIDE not in suiteCase:
+                        suiteCase[const.HIDE] = hideSub
 
     # fork
     resultSuites = []
+    caseOrdinal = itertools.count(0)
     for suite in suiteList:
+        suiteOrdinal = next(caseOrdinal)
         midSuites = copy.deepcopy(parentSuites) if parentSuites else [[]]
         for suiteCase in suite:
+            suiteCase[const.ORDER] = suiteOrdinal
+            subSuites = None
+            if const.CASE_SUITES in suiteCase:
+                subSuites = suiteCase[const.CASE_SUITES]
+                del suiteCase[const.CASE_SUITES]
             if const.CASE_TITLE in suiteCase or const.CASE_OPERATION in suiteCase:
                 for midSuite in midSuites:
                     suiteCaseCopy = copy.deepcopy(suiteCase)
                     midSuite.append(suiteCaseCopy)
-            if const.CASE_SUITES in suiteCase:
-                subSuites = suiteCase[const.CASE_SUITES]
-                del suiteCase[const.CASE_SUITES]
+            if subSuites is not None:
                 caseHideSub = const.HIDE in suiteCase and suiteCase[const.HIDE]
                 midSuites = parseSuite(midSuites, subSuites, caseHideSub)
         resultSuites.extend(midSuites)
