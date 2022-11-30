@@ -1,7 +1,11 @@
+import itertools
 import os
 import re
+import threading
 import unittest
 import uuid
+
+from loguru import logger
 
 from core.exporters import determineFilePath
 from core.place_holder import resolvePlaceHolder
@@ -13,7 +17,9 @@ class Tests(unittest.TestCase):
     def testResolvePlaceHolder(self):
         context = {
             'a': 100,
-            'b': '100'
+            'b': '100',
+            'uuid': lambda: uuid.uuid1().hex,
+            "bucketOrdinal": itertools.count(1)
         }
         s0 = '${x}'
         s1 = '${a}'
@@ -22,13 +28,17 @@ class Tests(unittest.TestCase):
         s4 = 's2_${b}'
         s5 = '@{bytearray(${a})}'
         s6 = '@{bytearray(${b})}'
-        self.assertEqual(None, resolvePlaceHolder(s0, context))
+        self.assertEqual('${x}', resolvePlaceHolder(s0, context))
         self.assertEqual(100, resolvePlaceHolder(s1, context))
         self.assertEqual('100', resolvePlaceHolder(s2, context))
         self.assertEqual('s2_100', resolvePlaceHolder(s3, context))
         self.assertEqual('s2_100', resolvePlaceHolder(s4, context))
         self.assertEqual(bytearray(100), resolvePlaceHolder(s5, context))
         self.assertEqual(bytearray(100), resolvePlaceHolder(s6, context))
+        self.assertTrue(resolvePlaceHolder('/a/b/c/@{uuid()}', context).startswith('/a/b/c'))
+        self.assertEqual(resolvePlaceHolder('aws-s3-tests-@{next(bucketOrdinal)}', context), "aws-s3-tests-1")
+        self.assertEqual(resolvePlaceHolder('@{next(bucketOrdinal)}', context), 2)
+        self.assertEqual(resolvePlaceHolder('@{next(bucketOrdinal)}', context), 3)
 
     def testPattern(self):
         p1 = re.compile('(\$\{(.*?)})')
@@ -54,3 +64,32 @@ class Tests(unittest.TestCase):
             for f in li:
                 os.remove(f)
             os.removedirs(f'{p}')
+
+    def testAtomicCounter(self):
+        hooks = []
+        threadCount = 1000
+        counter = itertools.count(1)
+        for i in range(threadCount):
+            t = threading.Thread(target=lambda: next(counter))
+            t.start()
+            hooks.append(t.join)
+        for hook in hooks:
+            hook()
+        self.assertEqual(next(counter), threadCount + 1)
+
+    def testAssertionError(self):
+        try:
+            msg = "assertion error at 'Error.Code'"
+            assertions = {
+                'a': 1
+            }
+            response = {
+                'a': 2,
+                'b': 3
+            }
+            raise AssertionError(msg, "x", assertions, "y", response)
+        except Exception as e:
+            if isinstance(e, AssertionError):
+                logger.error(e)
+            else:
+                logger.exception(e)

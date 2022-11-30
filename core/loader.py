@@ -1,6 +1,7 @@
 import io
 import json
 import os
+import sys
 import zipfile
 
 import yaml
@@ -36,25 +37,30 @@ def loadConfig():
     raise RuntimeError('failed to load config')
 
 
-def parseTopics(suites: [] = None, suite: [] = None, case: {} = None, topics: [] = None):
+def parseTopics(path="", suites: [] = None, suite: [] = None, case: {} = None, topics: [] = None):
     if topics is None or len(topics) == 0:
         return
     if len(topics) == 1:
-        suiteCase, subTopics = parseTopic(topics[0])
+        topicTitle, suiteCase, subTopics = parseTopic(f'{path}->{topics[0]["title"]}', topics[0])
         if suite is None:
             suite = []
             suites.append(suite)
         suite.append(suiteCase)
-        parseTopics(None, suite, suiteCase, subTopics)
+        parseTopics(f'{path}->{topicTitle}', None, suite, suiteCase, subTopics)
     else:
         hide, isCreateNew, entries = False, False, []
+        if case is None:
+            case = {}
+        if suite is None:
+            suite = []
+            suites.append(suite)
         if const.HIDE in case and case[const.HIDE]:
             hide = True
 
         for topic in topics:
-            suiteCase, subTopics = parseTopic(topic)
-            entries.append((suiteCase, subTopics))
-            if const.HIDE not in suite or suiteCase[const.HIDE] != hide:
+            topicTitle, suiteCase, subTopics = parseTopic(f'{path}->{topic["title"]}', topic)
+            entries.append((topicTitle, suiteCase, subTopics))
+            if const.HIDE not in suiteCase or suiteCase[const.HIDE] != hide:
                 isCreateNew = True
 
         caseSuites = suites
@@ -66,25 +72,68 @@ def parseTopics(suites: [] = None, suite: [] = None, case: {} = None, topics: []
             caseSuites = []
             case['suites'] = caseSuites
 
-        for suiteCase, subTopics in entries:
+        for topicTitle, suiteCase, subTopics in entries:
             newSuite = []
             caseSuites.append(newSuite)
             newSuite.append(suiteCase)
-            parseTopics(None, newSuite, suiteCase, subTopics)
+            parseTopics(f'{path}->{topicTitle}', None, newSuite, suiteCase, subTopics)
 
 
-def parseTopic(topic):
-    suiteCase = {'title': topic['title']}
+def parseTopic(path, topic):
+    topicTitle = topic['title']
+    suiteCase = {}
     if 'notes' in topic and (notes := topic['notes']) and 'plain' in notes and (plain := notes['plain']) and 'content' in plain:
-        if content := plain['content']:
+        if (content := plain['content']) and (content := content.strip()):
             try:
                 suiteCase = json.loads(content)
+            except Exception as e:
+                logger.error("path:{}, json decode failed:\n{}", path, content)
+                logger.exception(e)
+                sys.exit(1)
+
+    # use title as operation
+    if const.CASE_OPERATION in suiteCase:
+        # set code assertion
+        if titleItems := str(topicTitle).split('-'):
+            operation = suiteCase[const.CASE_OPERATION]
+            if len(titleItems) == 2:
+                if titleItems[0] == operation:
+                    try:
+                        responseStatus = int(str(titleItems[1]).strip())
+                        suiteCase[const.CASE_ASSERTION] = {"ResponseMetadata.HTTPStatusCode": responseStatus}
+                        # if const.CASE_ASSERTION not in suiteCase:
+                        #     suiteCase[const.CASE_ASSERTION] = {"ResponseMetadata.HTTPStatusCode": responseStatus}
+                        # else:
+                        #     suiteCase[const.CASE_ASSERTION]["ResponseMetadata.HTTPStatusCode"] = responseStatus
+                    except:
+                        pass
+                else:
+                    logger.warning("path: {} => topicTitle={}, operation={} not equals", path, topicTitle, operation)
+    # else:
+    #     suiteCase[const.CASE_TITLE] = topicTitle
+
+    # use label as clientName
+    if const.CASE_CLIENT_NAME in suiteCase and 'labels' in topic and (labels := topic['labels']) and (clientLabel := labels[0]):
+        if (labelItems := str(clientLabel).split('-')) and len(labelItems) == 2:
+            try:
+                responseStatus = int(str(labelItems[1]).strip())
+                if 200 <= responseStatus < 300:
+                    if const.CASE_ASSERTION not in suiteCase:
+                        suiteCase[const.CASE_ASSERTION] = {"ResponseMetadata.HTTPStatusCode": responseStatus}
+                    else:
+                        suiteCase[const.CASE_ASSERTION]["ResponseMetadata.HTTPStatusCode"] = responseStatus
+                else:
+                    suiteCase[const.CASE_ASSERTION] = {"ResponseMetadata.HTTPStatusCode": responseStatus}
+                    suiteCase[const.CASE_CLIENT_NAME] = labelItems[0]
             except:
                 pass
+        else:
+            suiteCase[const.CASE_CLIENT_NAME] = clientLabel
     subTopics = None
     if 'children' in topic and (children := topic['children']) and 'attached' in children:
         subTopics = children['attached']
-    return suiteCase, subTopics
+    suiteCase[const.CASE_TITLE] = topicTitle
+    return topicTitle, suiteCase, subTopics
 
 
 def loadXmindData(path):
@@ -106,7 +155,7 @@ def loadXmindData(path):
                         topics = skipped['children']['attached']
                         if len(topics) > 0:
                             serviceSuites = []
-                            parseTopics(suites=serviceSuites, topics=topics)
+                            parseTopics(path=serviceName, suites=serviceSuites, topics=topics)
                             if len(serviceSuites) > 0:
                                 result[serviceName] = serviceSuites
 

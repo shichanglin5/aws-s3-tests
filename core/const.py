@@ -4,6 +4,7 @@ CASE_OPERATION = 'operation'
 CASE_TITLE = 'title'
 CASE_PARAMETERS = 'parameters'
 CASE_ASSERTION = 'assertion'
+CASE_ASSERTION_CODE = 'ResponseMetadata.HTTPStatusCode'
 CASE_SUITES = 'suites'
 CASE_SUITES_ARR = 'suites_arr'
 CASE_SUITES_DICT = 'suites_dict'
@@ -29,6 +30,7 @@ RESET_HOOKS = 'resetHooks'
 XMIND_SUITES = 'xmind_indices'
 LOAD_XMIND_SUITES = 'load_xmind_suites'
 LOAD_YAML_SUITES = 'load_yaml_suites'
+
 
 CLIENT_PROPERTIES = ['service_name', 'region_name', 'api_version', 'use_ssl', 'verify', 'endpoint_url',
                      'aws_access_key_id', 'aws_secret_access_key', 'aws_session_token', 'config']

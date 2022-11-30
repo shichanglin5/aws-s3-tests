@@ -50,8 +50,7 @@ def main(args: []):
     logger.info('Tests Completed. Time Spent: %.2fs' % (end - start))
     summary = reportResult(sms)
 
-    if const.EXPORTERS in config:
-        exporters = config[const.EXPORTERS]
+    if const.EXPORTERS in config and (exporters := config[const.EXPORTERS]):
         for name, conf in exporters.items():
             if name in EXPORTER_DICT:
                 exporter = EXPORTER_DICT[name]

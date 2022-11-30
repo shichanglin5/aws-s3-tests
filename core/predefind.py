@@ -1,5 +1,4 @@
-import itertools
-import uuid
+from copy import deepcopy
 
 import boto3
 from botocore import UNSIGNED
@@ -9,7 +8,6 @@ from botocore.client import (
 from botocore.exceptions import ClientError
 
 BUCKET_PREFIX = '1-aws-s3-tests-bucket'
-BUCKET_ORDINAL = itertools.count(1)
 
 
 def newBucketName():
@@ -18,28 +16,12 @@ def newBucketName():
     return '%s-%d' % (BUCKET_PREFIX, current_bucket_ordinal)
 
 
-def generateBucketName(serviceModel=None, suiteLocals=None, caseLocals=None):
-    if suiteLocals is None:
-        suiteLocals = {}
-    bucketName = newBucketName()
-    result = {'Bucket': bucketName}
-    suiteLocals.update(result)
-    return result
+def setVars(serviceModel=None, suiteLocals=None, caseLocals=None, parameters=None):
+    suiteLocals.update(parameters)
+    return parameters
 
 
-def generateObjectKey(serviceModel=None, suiteLocals=None, caseLocals=None):
-    if 'Prefix' in caseLocals:
-        Prefix = caseLocals['Prefix']
-    else:
-        Prefix = ''
-
-    ObjectKey = Prefix + uuid.uuid1().hex
-    result = {'Key': ObjectKey}
-    suiteLocals.update(result)
-    return result
-
-
-def DeleteObjects(serviceModel=None, suiteLocals=None, caseLocals=None):
+def DeleteObjects(serviceModel=None, suiteLocals=None, caseLocals=None, parameters=None):
     client = caseLocals['Client']
     Bucket = caseLocals['Bucket']
 
@@ -68,16 +50,25 @@ def DeleteObjects(serviceModel=None, suiteLocals=None, caseLocals=None):
 
 
 predefinedFuncDict = {
-    'GenerateBucketName': generateBucketName,
-    'GenerateObjectKey': generateObjectKey,
-    'DeleteObjects': DeleteObjects
+    'DeleteObjects': DeleteObjects,
+    'SetVars': setVars,
+}
+
+defaultClientConfig = {
+    'connect_timeout': 5,
+    'read_timeout': 10,
+    'retries': {
+        'max_attempts': 2, 'mode': 'standard'
+    }
 }
 
 
 def newAnonymousClient(serviceName):
-    return boto3.client(service_name=serviceName, use_ssl=False, verify=False,
-                        config=S3Config(signature_version=UNSIGNED))
+    configOptions = deepcopy(defaultClientConfig)
+    configOptions['signature_version'] = UNSIGNED
+    return boto3.client(service_name=serviceName, use_ssl=False, verify=False, config=S3Config(**configOptions))
 
 
 def newAwsClient(serviceName, clientConfig):
-    return boto3.client(serviceName, **clientConfig)
+    configOptions = deepcopy(defaultClientConfig)
+    return boto3.client(serviceName, **clientConfig, config=S3Config(configOptions))

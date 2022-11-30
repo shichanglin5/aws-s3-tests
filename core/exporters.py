@@ -7,9 +7,8 @@ import zipfile
 from botocore.model import ServiceModel
 from loguru import logger
 
-from core import const
+from core import const, utils
 from core.models import ServiceTestModel
-from core.utils import IgnoreNotSerializable
 
 
 class Exporter:
@@ -82,13 +81,13 @@ class XmindExporter(Exporter):
             sheet, subTopics = createSheet(serviceName, self.summary[serviceName])
             # logger.info(json.dumps(serviceModel.suite_pass))
             hideEnabled = serviceModel.hideEnabled
-            self.appendTopics(subTopics, hideEnabled, 'PASS', serviceModel.suite_pass, "#15831C")
-            self.appendTopics(subTopics, hideEnabled, 'FAILED', serviceModel.suite_failed, "#E32C2D")
-            self.appendTopics(subTopics, hideEnabled, 'SKIPPED', serviceModel.suite_skipped, "#D0D0D0")
+            self.appendTopicsAggs(subTopics, hideEnabled, 'PASS', serviceModel.suite_pass, "#15831C", False)
+            self.appendTopics(subTopics, hideEnabled, 'FAILED', serviceModel.suite_failed, "#E32C2D", False)
+            self.appendTopicsAggs(subTopics, hideEnabled, 'SKIPPED', serviceModel.suite_skipped, "#D0D0D0", True)
             content.append(sheet)
         return content
 
-    def appendTopics(self, subTopics, hideEnabled, topicTitle, suites, lineColor):
+    def appendTopicsAggs(self, subTopics, hideEnabled, topicTitle, suites, lineColor, foldBranch=True):
         caseTree, caseNodes = {}, []
         var_parent, var_data, var_nodes, var_tree = 'parent', 'data', 'nodes', 'tree'
         for suite in suites:
@@ -141,10 +140,14 @@ class XmindExporter(Exporter):
                             "line-color": lineColor,
                         }
                 title = case[const.CASE_TITLE] if const.CASE_TITLE in case else case[const.CASE_OPERATION]
+                clientName = case[const.CASE_CLIENT_NAME] if const.CASE_CLIENT_NAME in case else ''
+                caseResponseCode = caseAssertion[const.CASE_ASSERTION_CODE] if const.CASE_ASSERTION in case and (
+                    caseAssertion := case[const.CASE_ASSERTION]) and const.CASE_ASSERTION_CODE in caseAssertion else ''
+                key = f'{title}_{clientName}_{caseResponseCode}'
 
                 # find existing tree node
-                if title in midTree:
-                    mid = midTree[title]
+                if key in midTree:
+                    mid = midTree[key]
                     midTree, midNodes, midData = mid[var_tree], mid[var_nodes], mid[var_data]
                     clearNotes = not caseSkipped and not caseFailed
                     if clearNotes and var_notes in midData:
@@ -161,6 +164,116 @@ class XmindExporter(Exporter):
 
                 # create new tree node
                 newSubNodes, newSubTree = [], {}
+                caseOrder = 0
+                if const.ORDER in case:
+                    caseOrder = case[const.ORDER]
+                    del case[const.ORDER]
+                newCaseData = {
+                    const.ORDER: caseOrder,
+                    "title": title,
+                    "style": {
+                        "properties": style
+                    },
+                    "children": {
+                        "attached": newSubNodes
+                    },
+                    "labels": [
+                        f'{clientName}-{caseResponseCode}' if caseResponseCode else clientName
+                    ] if clientName else None,
+                    "markers": [
+                        {
+                            "markerId": "symbol-exclam"
+                        }
+                    ] if caseFailed else None,
+                    var_notes: {
+                        "plain": {
+                            "content": utils.ToJsonStr(case) if caseSkipped else ('\n\n'.join(itr) if (
+                                itr := ['### %s ###\n%s' % (
+                                    str(field).capitalize(), fieldValue if isinstance(fieldValue, (numbers.Number, str)) else utils.ToJsonStr(fieldValue))
+                                        for field in self.includeFields if field in case and (fieldValue := case[field])]) else None)
+                        }
+                    } if caseSkipped or self.includeFields and [field for field in self.includeFields if field in case] else None
+                }
+                newNode = {var_parent: mid, var_data: newCaseData, var_tree: newSubTree, var_nodes: newSubNodes}
+
+                midNodes.append(newCaseData)
+                midTree[key] = newNode
+
+                midNodes, midTree, mid = newSubNodes, newSubTree, newNode
+        if caseNodes:
+            sortNodes(caseNodes)
+            subTopics.append({
+                "title": topicTitle,
+                "branch": "folded" if foldBranch else None,
+                "children": {
+                    "attached": caseNodes,
+                },
+                "style": {
+                    "properties": {
+                        "line-pattern": "solid",
+                        "svg:fill": lineColor,
+                        "line-width": "3pt",
+                        "line-color": lineColor,
+                    }
+                }})
+
+    def appendTopics(self, subTopics, hideEnabled, topicTitle, suites, lineColor, foldBranch=True):
+        caseNodes = []
+        for suite in suites:
+            midNodes = caseNodes
+            for case in suite:
+                ignoreCase, caseSkipped, caseFailed = False, True, False
+                if hideEnabled and const.HIDE in case and case[const.HIDE]:
+                    ignoreCase = True
+                if const.CASE_OPERATION not in case:
+                    if ignoreCase:
+                        continue
+                    # style for fork node
+                    style = {
+                        "line-pattern": "solid",
+                        "line-width": "3pt",
+                        "line-color": lineColor,
+                        "fo:color": "#000000FF",
+                        "fo:font-weight": "bold",
+                    }
+                elif const.CASE_SUCCESS not in case:
+                    if ignoreCase:
+                        continue
+                    # style for skipped case
+                    style = {
+                        "line-pattern": "solid",
+                        "line-width": "3pt",
+                        "svg:fill": "#D0D0D0FF",
+                        "line-color": "#D0D0D0FF",
+                        "fo:color": "#000000FF",
+                    }
+                else:
+                    caseSkipped = False
+                    if case[const.CASE_SUCCESS]:
+                        if ignoreCase:
+                            continue
+                        # style for skipped case
+                        style = {
+                            "line-pattern": "solid",
+                            "svg:fill": "#15831CFF",
+                            "line-width": "3pt",
+                            "line-color": lineColor,
+                        }
+                    else:
+                        caseFailed = True
+                        # style for skipped case
+                        style = {
+                            "line-pattern": "solid",
+                            "svg:fill": "#E32C2D",
+                            "line-width": "3pt",
+                            "line-color": lineColor,
+                        }
+                title = case[const.CASE_TITLE] if const.CASE_TITLE in case else case[const.CASE_OPERATION]
+                clientName = case[const.CASE_CLIENT_NAME] if const.CASE_CLIENT_NAME in case else ''
+                caseResponseCode = caseAssertion[const.CASE_ASSERTION_CODE] if const.CASE_ASSERTION in case and (
+                    caseAssertion := case[const.CASE_ASSERTION]) and const.CASE_ASSERTION_CODE in caseAssertion else ''
+
+                newSubNodes = []
                 newCaseData = {
                     const.ORDER: case[const.ORDER] if const.ORDER in case else 0,
                     "title": title,
@@ -171,8 +284,8 @@ class XmindExporter(Exporter):
                         "attached": newSubNodes
                     },
                     "labels": [
-                        case[const.CASE_CLIENT_NAME]
-                    ] if const.CASE_CLIENT_NAME in case else None,
+                        f'{clientName}-{caseResponseCode}' if caseResponseCode else clientName
+                    ] if clientName else None,
                     "markers": [
                         {
                             "markerId": "symbol-exclam"
@@ -180,24 +293,21 @@ class XmindExporter(Exporter):
                     ] if caseFailed else None,
                     var_notes: {
                         "plain": {
-                            "content": json.dumps(case, default=IgnoreNotSerializable) if caseSkipped else ('\n\n'.join(itr) if (
+                            "content": utils.ToJsonStr(case) if caseSkipped else ('\n\n'.join(itr) if (
                                 itr := ['### %s ###\n%s' % (
-                                    str(field).capitalize(), fieldValue if isinstance(fieldValue, (numbers.Number, str)) else json.dumps(fieldValue, default=IgnoreNotSerializable))
+                                    str(field).capitalize(), fieldValue if isinstance(fieldValue, (numbers.Number, str)) else utils.ToJsonStr(fieldValue))
                                         for field in self.includeFields if field in case and (fieldValue := case[field])]) else None)
                         }
                     } if caseSkipped or self.includeFields and [field for field in self.includeFields if field in case] else None
                 }
-                newNode = {var_parent: mid, var_data: newCaseData, var_tree: newSubTree, var_nodes: newSubNodes}
 
                 midNodes.append(newCaseData)
-                midTree[title] = newNode
-
-                midNodes, midTree, mid = newSubNodes, newSubTree, newNode
+                midNodes = newSubNodes
         if caseNodes:
             sortNodes(caseNodes)
             subTopics.append({
                 "title": topicTitle,
-                "branch": "folded",
+                "branch": "folded" if foldBranch else None,
                 "children": {
                     "attached": caseNodes,
                 },

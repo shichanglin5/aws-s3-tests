@@ -3,6 +3,8 @@ import itertools
 import json
 import os
 import re
+import urllib.parse
+import uuid
 from threading import Thread
 
 import yaml
@@ -19,7 +21,13 @@ from core.place_holder import resolvePlaceholderDict, resolvePlaceHolder
 from core.predefind import predefinedFuncDict, newAnonymousClient, newAwsClient
 from core.utils import IgnoreNotSerializable
 
-GLOBAL_VARIABLES = {}
+GLOBAL_VARIABLES = {
+    'urlEncode': urllib.parse.quote,
+    'uuidStr': lambda: uuid.uuid1().hex,
+    "bucketOrdinal": itertools.count(1)
+}
+
+_ = urllib.parse
 
 
 class ServiceTestModel:
@@ -99,7 +107,7 @@ class ServiceTestModel:
         for suiteFile, suiteModel in filteredSuites.items():
             for suite in suiteModel:
                 suiteId = next(self.idGenerator)
-                self.submitTask(self.doRun, [f'_{suiteId}_{self.serviceName}', suite, copy.deepcopy(GLOBAL_VARIABLES)])
+                self.submitTask(self.doRun, [f'_{suiteId}_{self.serviceName}', suite, GLOBAL_VARIABLES.copy()])
 
     def filterSuites(self):
         filteredSuites = self.suiteModels
@@ -111,7 +119,7 @@ class ServiceTestModel:
                     fullPath = suiteFile
                     midPath = suiteFile
                     for case in suite:
-                        caseName = case[const.CASE_OPERATION] if const.CASE_OPERATION in case else case[const.CASE_TITLE]
+                        caseName = case[const.CASE_TITLE] if const.CASE_TITLE in case else case[const.CASE_OPERATION] if const.CASE_OPERATION in case else None
                         fullPath = '%s::%s' % (fullPath, caseName)
                         if not (const.HIDE in case and case[const.HIDE]):
                             midPath = '%s::%s' % (midPath, caseName)
@@ -139,14 +147,14 @@ class ServiceTestModel:
     def doRun(self, suiteId, suite, suiteLocals):
         suiteExecPath = suiteId
         for case in suite:
-            caseName = case[const.CASE_OPERATION] if const.CASE_OPERATION in case else case[const.CASE_TITLE] if const.CASE_TITLE else 'error[case name undefined]]'
+            caseName = case[const.CASE_TITLE] if const.CASE_TITLE in case else case[const.CASE_OPERATION]
             currentSuiteExecPath = f'{suiteExecPath}::{caseName}'
             ignore = self.hideEnabled and const.HIDE in case and case[const.HIDE]
             parameters = {}
 
             caseLocals = suiteLocals.copy()
             caseLocals[const.RESET_HOOKS] = []
-            caseResponse = None
+            clientName, caseResponse = None, None
             try:
                 if const.CASE_OPERATION not in case:
                     if not ignore:
@@ -154,7 +162,7 @@ class ServiceTestModel:
                     continue
 
                 # client
-                operationName, clientName = case[const.CASE_OPERATION], None
+                operationName = case[const.CASE_OPERATION]
                 if const.CASE_CLIENT_NAME in case:
                     clientName = case[const.CASE_CLIENT_NAME]
                     if clientName in self.clientDict:
@@ -170,7 +178,7 @@ class ServiceTestModel:
 
                 # execute
                 if operationName in predefinedFuncDict.keys():
-                    caseResponse = predefinedFuncDict[operationName](serviceModel=self, suiteLocals=suiteLocals, caseLocals=caseLocals)
+                    caseResponse = predefinedFuncDict[operationName](serviceModel=self, suiteLocals=suiteLocals, caseLocals=caseLocals, parameters=parameters)
                 elif operationName in serviceClient.supportOperations:
                     try:
                         # noinspection PyProtectedMember
@@ -182,13 +190,8 @@ class ServiceTestModel:
 
                 # update title
                 case[const.CASE_RESPONSE] = caseResponse
-                if const.CASE_ASSERTION in case and 'ResponseMetadata' in caseResponse and 'HTTPStatusCode' in (responseMetadata := caseResponse['ResponseMetadata']):
+                if const.CASE_TITLE not in case and const.CASE_ASSERTION in case and 'ResponseMetadata' in caseResponse and 'HTTPStatusCode' in (responseMetadata := caseResponse['ResponseMetadata']):
                     case[const.CASE_TITLE] = '%s-%s' % (operationName, responseMetadata['HTTPStatusCode'])
-
-                # log response
-                if not ignore:
-                    logger.debug(
-                        f"Response@{f'{clientName}@' if clientName else ''}{currentSuiteExecPath} => {caseResponse}")
 
                 # assertion
                 if const.CASE_ASSERTION in case:
@@ -205,6 +208,10 @@ class ServiceTestModel:
                 if not ignore:
                     suiteExecPath = currentSuiteExecPath
 
+                # log response
+                if not ignore:
+                    logger.debug(f"{f'{clientName}@' if clientName else ''}{currentSuiteExecPath} ==> req:{json.dumps(parameters, default=IgnoreNotSerializable)}, resp: {caseResponse}")
+
                 case[const.CASE_SUCCESS] = True
             except Exception as e:
                 self.suite_failed.append(suite)
@@ -212,13 +219,22 @@ class ServiceTestModel:
                 case[const.ERROR_INFO] = f'{e.__class__.__name__}({json.dumps(e.args, default=IgnoreNotSerializable)})'
                 if caseResponse:
                     case[const.CASE_RESPONSE] = caseResponse
-                logger.exception(currentSuiteExecPath, e)
-                # terminate suite
+
+                logger.error(f"{f'{clientName}@' if clientName else ''}{currentSuiteExecPath}\n"
+                             f"### req ### {json.dumps(parameters, default=IgnoreNotSerializable)}\n"
+                             f"### resp ### {json.dumps(caseResponse, default=IgnoreNotSerializable)}\n")
+                if isinstance(e, AssertionError):
+                    logger.error(e)
+                else:
+                    logger.exception(e)
                 return
             finally:
                 resetHooks = caseLocals[const.RESET_HOOKS]
                 for hook in resetHooks:
-                    hook()
+                    try:
+                        hook()
+                    except Exception as e:
+                        logger.exception("Exception while resetting hooks: {}", e)
 
         # suite pass
         self.suite_pass.append(suite)

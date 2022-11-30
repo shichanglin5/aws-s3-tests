@@ -23,7 +23,7 @@ def validateAssertions(path: str, assertions: dict, response: dict):
 def validateAssertionArr(path, expect, result):
     if result is None or not isinstance(result, list) or len(result) != len(expect):
         msg = f'Assertion Error: at {path}, array length not equal'
-        raise AssertionError(msg)
+        raise AssertionError(msg, expect, result)
     for i, e in enumerate(expect):
         e1 = result[i]
         if isinstance(e, dict):
