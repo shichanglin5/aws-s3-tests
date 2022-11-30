@@ -30,6 +30,7 @@ RESET_HOOKS = 'resetHooks'
 XMIND_SUITES = 'xmind_indices'
 LOAD_XMIND_SUITES = 'load_xmind_suites'
 LOAD_YAML_SUITES = 'load_yaml_suites'
+EQUALS_IN_SIZE = '__equals_in_size__'
 
 
 CLIENT_PROPERTIES = ['service_name', 'region_name', 'api_version', 'use_ssl', 'verify', 'endpoint_url',
