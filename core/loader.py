@@ -91,44 +91,25 @@ def parseTopic(path, topic):
                 logger.exception(e)
                 sys.exit(1)
 
-    # use title as operation
-    if const.CASE_OPERATION in suiteCase:
-        # set code assertion
-        if titleItems := str(topicTitle).split('-'):
-            operation = suiteCase[const.CASE_OPERATION]
-            if len(titleItems) == 2:
-                if titleItems[0] == operation:
-                    try:
-                        responseStatus = int(str(titleItems[1]).strip())
-                        suiteCase[const.CASE_ASSERTION] = {"ResponseMetadata.HTTPStatusCode": responseStatus}
-                        # if const.CASE_ASSERTION not in suiteCase:
-                        #     suiteCase[const.CASE_ASSERTION] = {"ResponseMetadata.HTTPStatusCode": responseStatus}
-                        # else:
-                        #     suiteCase[const.CASE_ASSERTION]["ResponseMetadata.HTTPStatusCode"] = responseStatus
-                    except:
-                        pass
-                else:
-                    logger.warning("path: {} => topicTitle={}, operation={} not equals", path, topicTitle, operation)
-    # else:
-    #     suiteCase[const.CASE_TITLE] = topicTitle
-
     # use label as clientName
     if const.CASE_CLIENT_NAME in suiteCase and 'labels' in topic and (labels := topic['labels']) and (clientLabel := labels[0]):
         if (labelItems := str(clientLabel).split('-')) and len(labelItems) == 2:
             try:
+                suiteCase[const.CASE_CLIENT_NAME] = labelItems[0]
                 responseStatus = int(str(labelItems[1]).strip())
                 if 200 <= responseStatus < 300:
-                    if const.CASE_ASSERTION not in suiteCase:
-                        suiteCase[const.CASE_ASSERTION] = {"ResponseMetadata.HTTPStatusCode": responseStatus}
-                    else:
+                    if const.CASE_ASSERTION in suiteCase:
                         suiteCase[const.CASE_ASSERTION]["ResponseMetadata.HTTPStatusCode"] = responseStatus
+                    else:
+                        suiteCase[const.CASE_ASSERTION] = {"ResponseMetadata.HTTPStatusCode": responseStatus}
                 else:
                     suiteCase[const.CASE_ASSERTION] = {"ResponseMetadata.HTTPStatusCode": responseStatus}
-                    suiteCase[const.CASE_CLIENT_NAME] = labelItems[0]
             except:
                 pass
         else:
             suiteCase[const.CASE_CLIENT_NAME] = clientLabel
+            if const.CASE_ASSERTION in suiteCase:
+                del suiteCase[const.CASE_ASSERTION]
     subTopics = None
     if 'children' in topic and (children := topic['children']) and 'attached' in children:
         subTopics = children['attached']
