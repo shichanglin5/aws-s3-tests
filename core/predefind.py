@@ -1,3 +1,4 @@
+import threading
 from copy import deepcopy
 
 import boto3
@@ -21,14 +22,56 @@ def setVars(serviceModel=None, suiteLocals=None, caseLocals=None, parameters=Non
     return parameters
 
 
-def DeleteObjects(serviceModel=None, suiteLocals=None, caseLocals=None, parameters=None):
+def DropAllBuckets(serviceModel=None, suiteLocals=None, caseLocals=None, parameters=None):
+    client = caseLocals['Client']
+    apiInvokedCount = 0
+    try:
+        listBucketsResp = client.list_buckets()
+        if 'Buckets' in listBucketsResp and (Buckets := listBucketsResp['Buckets']):
+            hooks = []
+            Buckets = [Bucket['Name'] for Bucket in Buckets]
+            listBucketsResp['Buckets'] = Buckets
+            for Bucket in Buckets:
+                apiInvokedCount += 1
+                caseLocalsCopy = caseLocals.copy()
+                caseLocalsCopy['Bucket'] = Bucket
+                t = threading.Thread(target=DropBucket, args=(serviceModel, suiteLocals, caseLocalsCopy, parameters))
+                hooks.append(t.join)
+                t.start()
+            for hook in hooks:
+                hook()
+        return listBucketsResp
+    except ClientError as e:
+        return e.response
+    finally:
+        serviceModel.increaseExtraCaseApisCount(apiInvokedCount)
+
+
+def DropBucket(serviceModel=None, suiteLocals=None, caseLocals=None, parameters=None):
+    client = caseLocals['Client']
+    Bucket = caseLocals['Bucket']
+
+    try:
+        response = DropObjects(serviceModel, suiteLocals, caseLocals, parameters)
+        if 'ResponseMetadata' in response and (responseMetadata := response['ResponseMetadata']):
+            if 400 <= responseMetadata['HTTPStatusCode'] < 500:
+                return response
+        response = client.delete_bucket(Bucket=Bucket)
+        return response
+    except ClientError as e:
+        return e.response
+
+
+def DropObjects(serviceModel=None, suiteLocals=None, caseLocals=None, parameters=None):
     client = caseLocals['Client']
     Bucket = caseLocals['Bucket']
 
     apiInvokedCount = 0
     try:
-        apiInvokedCount += 1
         response = client.list_objects(Bucket=Bucket)
+        if 'ResponseMetadata' in response and (responseMetadata := response['ResponseMetadata']):
+            if responseMetadata['HTTPStatusCode'] == 404:
+                return response
         while True:
             finalResponse = response
             if 'Contents' in response and (objects := response['Contents']):
@@ -46,11 +89,14 @@ def DeleteObjects(serviceModel=None, suiteLocals=None, caseLocals=None, paramete
     except ClientError as e:
         return e.response
     finally:
-        serviceModel.extra_case_api_invoked_count += apiInvokedCount - 1
+        serviceModel.increaseExtraCaseApisCount(apiInvokedCount)
 
 
 predefinedFuncDict = {
-    'DeleteObjects': DeleteObjects,
+    'DeleteObjects': DropObjects,
+    'DropAllBuckets': DropAllBuckets,
+    'DropObjects': DropObjects,
+    'DropBucket': DropBucket,
     'SetVars': setVars,
 }
 

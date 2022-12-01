@@ -85,7 +85,7 @@ def parseTopic(path, topic):
     if 'notes' in topic and (notes := topic['notes']) and 'plain' in notes and (plain := notes['plain']) and 'content' in plain:
         if (content := plain['content']) and (content := content.strip()):
             try:
-                suiteCase = json.loads(content)
+                suiteCase = json.loads(content.replace(' ', ''))
             except Exception as e:
                 logger.error("path:{}, json decode failed:\n{}", path, content)
                 logger.exception(e)
@@ -139,8 +139,32 @@ def loadXmindData(path):
                             parseTopics(path=serviceName, suites=serviceSuites, topics=topics)
                             if len(serviceSuites) > 0:
                                 result[serviceName] = serviceSuites
-
+        exportYaml(result)
+        # postProcess(result)
         return result
     finally:
         if zf is not None:
             zf.close()
+
+
+def exportYaml(result):
+    for serviceName, data in result.items():
+        exportYamlPath = f'.wd/tests/suites/{serviceName}'
+        logger.info('exportYaml to: {}', exportYamlPath)
+        if not os.path.exists(exportYamlPath):
+            os.makedirs(exportYamlPath, exist_ok=True)
+        with open(f'{exportYamlPath}/integration_tests.yaml', 'w') as fp:
+            yaml.dump(data, fp)
+
+
+def postProcess(result):
+    if 's3' in result and (s3Suites := result['s3']):
+        for s3Suite in s3Suites:
+            s3Suite.append({
+                "operation": "DropBucket",
+                "clientName": "admin",
+                "parameters": {
+                    "Bucket": "${Bucket}"
+                },
+                "__hide__": True
+            })

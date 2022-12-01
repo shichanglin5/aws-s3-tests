@@ -1,9 +1,12 @@
 import itertools
+import json
 import os
 import re
 import threading
+import time
 import unittest
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 
 from loguru import logger
 
@@ -93,3 +96,10 @@ class Tests(unittest.TestCase):
                 logger.error(e)
             else:
                 logger.exception(e)
+
+    def testThreadPool(self):
+        with ThreadPoolExecutor(max_workers=50) as pool:
+            f = pool.submit(lambda x,y: time.sleep(3), 1,2)
+            print("wait three seconds")
+            print(f.result())
+            pool.shutdown()

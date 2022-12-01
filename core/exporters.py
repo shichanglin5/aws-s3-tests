@@ -139,7 +139,7 @@ class XmindExporter(Exporter):
                             "line-width": "3pt",
                             "line-color": lineColor,
                         }
-                title = case[const.CASE_TITLE] if const.CASE_TITLE in case else case[const.CASE_OPERATION]
+                title = self.getTitle(case)
                 clientName = case[const.CASE_CLIENT_NAME] if const.CASE_CLIENT_NAME in case else ''
                 caseResponseCode = caseAssertion[const.CASE_ASSERTION_CODE] if const.CASE_ASSERTION in case and (
                     caseAssertion := case[const.CASE_ASSERTION]) and const.CASE_ASSERTION_CODE in caseAssertion else ''
@@ -192,7 +192,7 @@ class XmindExporter(Exporter):
                                     str(field).capitalize(), fieldValue if isinstance(fieldValue, (numbers.Number, str)) else utils.ToJsonStr(fieldValue))
                                         for field in self.includeFields if field in case and (fieldValue := case[field])]) else None)
                         }
-                    } if caseSkipped or self.includeFields and [field for field in self.includeFields if field in case] else None
+                    } if caseSkipped and case or self.includeFields and [field for field in self.includeFields if field in case] else None
                 }
                 newNode = {var_parent: mid, var_data: newCaseData, var_tree: newSubTree, var_nodes: newSubNodes}
 
@@ -216,6 +216,16 @@ class XmindExporter(Exporter):
                         "line-color": lineColor,
                     }
                 }})
+
+    def getTitle(self, case):
+        if const.CASE_TITLE in case:
+            title = case[const.CASE_TITLE]
+            del case[const.CASE_TITLE]
+        elif const.CASE_OPERATION in case:
+            title = case[const.CASE_OPERATION]
+        else:
+            title = "Unknown"
+        return title
 
     def appendTopics(self, subTopics, hideEnabled, topicTitle, suites, lineColor, foldBranch=True):
         caseNodes = []
@@ -268,7 +278,7 @@ class XmindExporter(Exporter):
                             "line-width": "3pt",
                             "line-color": lineColor,
                         }
-                title = case[const.CASE_TITLE] if const.CASE_TITLE in case else case[const.CASE_OPERATION]
+                title = self.getTitle(case)
                 clientName = case[const.CASE_CLIENT_NAME] if const.CASE_CLIENT_NAME in case else ''
                 caseResponseCode = caseAssertion[const.CASE_ASSERTION_CODE] if const.CASE_ASSERTION in case and (
                     caseAssertion := case[const.CASE_ASSERTION]) and const.CASE_ASSERTION_CODE in caseAssertion else ''
@@ -298,7 +308,7 @@ class XmindExporter(Exporter):
                                     str(field).capitalize(), fieldValue if isinstance(fieldValue, (numbers.Number, str)) else utils.ToJsonStr(fieldValue))
                                         for field in self.includeFields if field in case and (fieldValue := case[field])]) else None)
                         }
-                    } if caseSkipped or self.includeFields and [field for field in self.includeFields if field in case] else None
+                    } if caseSkipped and case or self.includeFields and [field for field in self.includeFields if field in case] else None
                 }
 
                 midNodes.append(newCaseData)

@@ -3,9 +3,10 @@ import itertools
 import json
 import os
 import re
+import threading
 import urllib.parse
 import uuid
-from threading import Thread
+from concurrent.futures import ThreadPoolExecutor
 
 import yaml
 from botocore.client import (
@@ -31,7 +32,7 @@ _ = urllib.parse
 
 
 class ServiceTestModel:
-    def __init__(self, serviceName, suiteFiles, identities, clientConfig, includePatterns, excludePatterns, hideEnabled, xmindSuites):
+    def __init__(self, serviceName, suiteFiles, identities, clientConfig, includePatterns, excludePatterns, hideEnabled, xmindSuites, concurrency=5):
         self.serviceName = serviceName
         self.suiteFiles = suiteFiles
         self.identities = identities
@@ -50,6 +51,12 @@ class ServiceTestModel:
         self.suite_failed = []
         self.suite_skipped = []
         self.extra_case_api_invoked_count = 0
+        self.extra_case_api_invoked_count_lock = threading.Lock()
+        self.threadPool = ThreadPoolExecutor(max_workers=concurrency)
+
+    def increaseExtraCaseApisCount(self, increment):
+        with self.extra_case_api_invoked_count_lock:
+            self.extra_case_api_invoked_count += increment
 
     def setUp(self):
         if self.xmindSuites is not None:
@@ -93,10 +100,9 @@ class ServiceTestModel:
             except:
                 pass
 
-    def submitTask(self, target, args):
-        t = Thread(target=target, args=args)
-        t.start()
-        self.hooks.append(t.join)
+    def submitTask(self, target, *args):
+        future = self.threadPool.submit(target, *args)
+        self.hooks.append(future.result)
 
     def run(self):
         try:
@@ -107,7 +113,7 @@ class ServiceTestModel:
         for suiteFile, suiteModel in filteredSuites.items():
             for suite in suiteModel:
                 suiteId = next(self.idGenerator)
-                self.submitTask(self.doRun, [f'_{suiteId}_{self.serviceName}', suite, GLOBAL_VARIABLES.copy()])
+                self.submitTask(self.doRun, f'_{suiteId}_{self.serviceName}', suite, GLOBAL_VARIABLES.copy())
 
     def filterSuites(self):
         filteredSuites = self.suiteModels
@@ -144,105 +150,134 @@ class ServiceTestModel:
                         self.suite_skipped.append(suite)
         return filteredSuites
 
+    def getTitle(self, case):
+        if const.CASE_TITLE in case:
+            title = case[const.CASE_TITLE]
+            # del case[const.CASE_TITLE]
+        else:
+            title = case[const.CASE_OPERATION]
+        return title
+
     def doRun(self, suiteId, suite, suiteLocals):
         suiteExecPath = suiteId
-        for case in suite:
-            caseName = case[const.CASE_TITLE] if const.CASE_TITLE in case else case[const.CASE_OPERATION]
-            currentSuiteExecPath = f'{suiteExecPath}::{caseName}'
-            ignore = self.hideEnabled and const.HIDE in case and case[const.HIDE]
-            parameters = {}
+        try:
+            for case in suite:
+                suiteExecPath = self.runCase(case, suiteExecPath, suiteLocals, suite)
+            self.suite_pass.append(suite)
+        except:
+            pass
+        finally:
+            self.runCase({
+                "operation": "DropBucket",
+                "clientName": "admin",
+                "parameters": {
+                    "Bucket": "${Bucket}"
+                },
+            }, "*** drop bucket ***", suiteLocals, None)
 
-            caseLocals = suiteLocals.copy()
-            caseLocals[const.RESET_HOOKS] = []
-            clientName, caseResponse = None, None
-            try:
-                if const.CASE_OPERATION not in case:
-                    if not ignore:
-                        suiteExecPath = currentSuiteExecPath
-                    continue
+    def runCase(self, case, suiteExecPath, suiteLocals, suite):
+        caseName = case[const.CASE_TITLE] if const.CASE_TITLE in case else case[const.CASE_OPERATION]
+        currentSuiteExecPath = f'{suiteExecPath}::{caseName}'
+        ignore = self.hideEnabled and const.HIDE in case and case[const.HIDE]
+        parameters = {}
 
-                # client
-                operationName = case[const.CASE_OPERATION]
-                if const.CASE_CLIENT_NAME in case:
-                    clientName = case[const.CASE_CLIENT_NAME]
-                    if clientName in self.clientDict:
-                        serviceClient = self.clientDict[clientName]
-                        caseLocals['Client'] = serviceClient
-                        caseLocals.update(serviceClient.identityConfig)
-
-                # parameters
-                if const.CASE_PARAMETERS in case:
-                    parameters = case[const.CASE_PARAMETERS]
-                    resolvePlaceholderDict(parameters, caseLocals)
-                    caseLocals.update(parameters)
-
-                # execute
-                if operationName in predefinedFuncDict.keys():
-                    caseResponse = predefinedFuncDict[operationName](serviceModel=self, suiteLocals=suiteLocals, caseLocals=caseLocals, parameters=parameters)
-                elif operationName in serviceClient.supportOperations:
-                    try:
-                        # noinspection PyProtectedMember
-                        caseResponse = BaseClient._make_api_call(serviceClient, operationName, parameters)
-                    except ClientError as e:
-                        caseResponse = e.response
-                else:
-                    raise RuntimeError(f'operation[{operationName}] undefined')
-
-                # update title
-                case[const.CASE_RESPONSE] = caseResponse
-                if const.CASE_TITLE not in case and const.CASE_ASSERTION in case and 'ResponseMetadata' in caseResponse and 'HTTPStatusCode' in (responseMetadata := caseResponse['ResponseMetadata']):
-                    case[const.CASE_TITLE] = '%s-%s' % (operationName, responseMetadata['HTTPStatusCode'])
-
-                # assertion
-                if const.CASE_ASSERTION in case:
-                    assertion = case[const.CASE_ASSERTION]
-                    resolvePlaceholderDict(assertion, caseLocals)
-                    validateAssertions('caseResponse', assertion, caseResponse)
-
-                # suite locals (resolve properties and put it into suiteLocals)
-                if const.SUITE_LOCALS in case and (caseSuiteLocals := case[const.SUITE_LOCALS]) and isinstance(caseSuiteLocals, dict):
-                    caseLocals.update(caseResponse)
-                    for key, value in caseSuiteLocals.items():
-                        suiteLocals[key] = resolvePlaceHolder(value, caseLocals)
-
+        caseLocals = suiteLocals.copy()
+        caseLocals[const.RESET_HOOKS] = []
+        clientName, caseResponse = None, None
+        try:
+            if const.CASE_OPERATION not in case:
                 if not ignore:
                     suiteExecPath = currentSuiteExecPath
+                return suiteExecPath
+            # client
+            operationName = case[const.CASE_OPERATION]
+            if const.CASE_CLIENT_NAME in case:
+                clientName = case[const.CASE_CLIENT_NAME]
+                if clientName in self.clientDict:
+                    serviceClient = self.clientDict[clientName]
+                    caseLocals['Client'] = serviceClient
+                    caseLocals.update(serviceClient.identityConfig)
 
-                # log response
-                if not ignore:
-                    logger.debug(f"{f'{clientName}@' if clientName else ''}{currentSuiteExecPath} ==> req:{json.dumps(parameters, default=IgnoreNotSerializable)}, resp: {caseResponse}")
+            # parameters
+            if const.CASE_PARAMETERS in case:
+                parameters = case[const.CASE_PARAMETERS]
+                resolvePlaceholderDict(parameters, caseLocals)
+                caseLocals.update(parameters)
 
-                case[const.CASE_SUCCESS] = True
-            except Exception as e:
+            # execute
+            if operationName in predefinedFuncDict.keys():
+                caseResponse = predefinedFuncDict[operationName](serviceModel=self, suiteLocals=suiteLocals, caseLocals=caseLocals, parameters=parameters)
+            elif operationName in serviceClient.supportOperations:
+                try:
+                    # noinspection PyProtectedMember
+                    caseResponse = BaseClient._make_api_call(serviceClient, operationName, parameters)
+                except ClientError as e:
+                    caseResponse = e.response
+            else:
+                raise RuntimeError(f'operation[{operationName}] undefined')
+
+            # update title
+            case[const.CASE_RESPONSE] = caseResponse
+            # if const.CASE_TITLE not in case and const.CASE_ASSERTION in case and 'ResponseMetadata' in caseResponse and 'HTTPStatusCode' in (responseMetadata := caseResponse['ResponseMetadata']):
+            #     case[const.CASE_TITLE] = '%s-%s' % (operationName, responseMetadata['HTTPStatusCode'])
+
+            # assertion
+            if const.CASE_ASSERTION in case:
+                assertion = case[const.CASE_ASSERTION]
+                resolvePlaceholderDict(assertion, caseLocals)
+                validateAssertions('caseResponse', assertion, caseResponse)
+
+            # suite locals (resolve properties and put it into suiteLocals)
+            if const.SUITE_LOCALS in case and (caseSuiteLocals := case[const.SUITE_LOCALS]) and isinstance(caseSuiteLocals, dict):
+                caseLocals.update(caseResponse)
+                for key, value in caseSuiteLocals.items():
+                    suiteLocals[key] = resolvePlaceHolder(value, caseLocals)
+
+            if not ignore:
+                suiteExecPath = currentSuiteExecPath
+
+            # log response
+            if not ignore:
+                logger.debug(f"{f'{clientName}@' if clientName else ''}{currentSuiteExecPath} ==> req:{json.dumps(parameters, default=IgnoreNotSerializable)}, resp: {caseResponse}")
+
+            case[const.CASE_SUCCESS] = True
+            return suiteExecPath
+        except Exception as e:
+            if const.CASE_ASSERTION in case and 'ResponseMetadata' in caseResponse and 'HTTPStatusCode' in (responseMetadata := caseResponse['ResponseMetadata']):
+                case[const.CASE_TITLE] = '%s-%s' % (caseName, responseMetadata['HTTPStatusCode'])
+
+            if suite is not None:
                 self.suite_failed.append(suite)
-                case[const.CASE_SUCCESS] = False
-                case[const.ERROR_INFO] = f'{e.__class__.__name__}({json.dumps(e.args, default=IgnoreNotSerializable)})'
-                if caseResponse:
-                    case[const.CASE_RESPONSE] = caseResponse
+            case[const.CASE_SUCCESS] = False
+            case[const.ERROR_INFO] = f'{e.__class__.__name__}({json.dumps(e.args, default=IgnoreNotSerializable)})'
+            if caseResponse:
+                case[const.CASE_RESPONSE] = caseResponse
 
-                logger.error(f"{f'{clientName}@' if clientName else ''}{currentSuiteExecPath}\n"
-                             f"### req ### {json.dumps(parameters, default=IgnoreNotSerializable)}\n"
-                             f"### resp ### {json.dumps(caseResponse, default=IgnoreNotSerializable)}\n")
-                if isinstance(e, AssertionError):
-                    logger.error(e)
-                else:
-                    logger.exception(e)
-                return
-            finally:
-                resetHooks = caseLocals[const.RESET_HOOKS]
-                for hook in resetHooks:
-                    try:
-                        hook()
-                    except Exception as e:
-                        logger.exception("Exception while resetting hooks: {}", e)
-
-        # suite pass
-        self.suite_pass.append(suite)
+            logger.error(f"{f'{clientName}@' if clientName else ''}{currentSuiteExecPath}\n"
+                         f"### req[{operationName}] ### {json.dumps(parameters, default=IgnoreNotSerializable)}\n"
+                         f"### resp ### {json.dumps(caseResponse, default=IgnoreNotSerializable)}\n")
+            if isinstance(e, AssertionError):
+                logger.error(e)
+            else:
+                logger.exception(e)
+            raise e
+        finally:
+            resetHooks = caseLocals[const.RESET_HOOKS]
+            for hook in resetHooks:
+                try:
+                    hook()
+                except Exception as e:
+                    logger.exception("Exception while resetting hooks: {}", e)
 
 
 def initServicesTestModels(config, includePatterns, excludePatterns):
     identities = config['identities']
     clientConfig = config['client_config']
+    concurrency = 5
+    if 'concurrency' in config:
+        c = config['concurrency']
+        if c > 0:
+            concurrency = c
 
     testsDir = "./tests"
     if 'tests_dir' in config:
@@ -296,7 +331,7 @@ def initServicesTestModels(config, includePatterns, excludePatterns):
         serviceModels[serviceName] = ServiceTestModel(serviceName,
                                                       serviceYamlFiles[serviceName] if serviceName in serviceYamlFiles else None,
                                                       identities, clientConfig, includePatterns, excludePatterns, hideEnabled,
-                                                      xmindSuites[serviceName] if serviceName in xmindSuites else None)
+                                                      xmindSuites[serviceName] if serviceName in xmindSuites else None, concurrency)
     return serviceModels
 
 

@@ -15,7 +15,7 @@ def parseResponseByDot(path, key, response):
 def validateAssertions(path: str, assertions: dict, response: dict):
     if const.EQUALS_IN_SIZE in assertions and assertions[const.EQUALS_IN_SIZE]:
         del assertions[const.EQUALS_IN_SIZE]
-        if response is None or len(response) != len(assertions) - 1:
+        if response is None or len(response) != len(assertions):
             msg = f'Assertion Error: at {path}, dict size not equal'
             raise AssertionError(msg, assertions, response)
     for key, value in assertions.items():

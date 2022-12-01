@@ -6,4 +6,4 @@ def IgnoreNotSerializable(o):
 
 
 def ToJsonStr(o):
-    return json.dumps(o, default=IgnoreNotSerializable, indent=4)
+    return json.dumps(o, default=IgnoreNotSerializable, indent=2)
