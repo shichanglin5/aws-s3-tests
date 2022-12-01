@@ -32,7 +32,7 @@ _ = urllib.parse
 
 
 class ServiceTestModel:
-    def __init__(self, serviceName, suiteFiles, identities, clientConfig, includePatterns, excludePatterns, hideEnabled, xmindSuites, concurrency=5):
+    def __init__(self, serviceName, suiteFiles, identities, clientConfig, includePatterns, excludePatterns, hideEnabled, xmindSuites, concurrency=5, customHeaders=None):
         self.serviceName = serviceName
         self.suiteFiles = suiteFiles
         self.identities = identities
@@ -53,6 +53,7 @@ class ServiceTestModel:
         self.extra_case_api_invoked_count = 0
         self.extra_case_api_invoked_count_lock = threading.Lock()
         self.threadPool = ThreadPoolExecutor(max_workers=concurrency)
+        self.customHeaders = customHeaders
 
     def increaseExtraCaseApisCount(self, increment):
         with self.extra_case_api_invoked_count_lock:
@@ -85,6 +86,12 @@ class ServiceTestModel:
                 identityConfig['identity_name'] = identityName
                 identityConfig.update(clientConfig)
                 serviceClient.identityConfig = identityConfig
+                if self.customHeaders is not None:
+                    def addHeaders(request, **kwargs):
+                        for k, v in self.customHeaders.items():
+                            request.headers[k] = v
+
+                    serviceClient.meta.events.register('request-created.s3.*', addHeaders)
                 self.clientDict[identityName] = serviceClient
             except Exception as e:
                 logger.error(f"Failed to create client for {identityName}", e)
@@ -278,6 +285,9 @@ def initServicesTestModels(config, includePatterns, excludePatterns):
         c = config['concurrency']
         if c > 0:
             concurrency = c
+    customHeaders = None
+    if 'custom_headers' in config:
+        customHeaders = config['custom_headers']
 
     testsDir = "./tests"
     if 'tests_dir' in config:
@@ -331,7 +341,7 @@ def initServicesTestModels(config, includePatterns, excludePatterns):
         serviceModels[serviceName] = ServiceTestModel(serviceName,
                                                       serviceYamlFiles[serviceName] if serviceName in serviceYamlFiles else None,
                                                       identities, clientConfig, includePatterns, excludePatterns, hideEnabled,
-                                                      xmindSuites[serviceName] if serviceName in xmindSuites else None, concurrency)
+                                                      xmindSuites[serviceName] if serviceName in xmindSuites else None, concurrency, customHeaders)
     return serviceModels
 
 

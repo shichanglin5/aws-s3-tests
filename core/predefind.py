@@ -92,6 +92,22 @@ def DropObjects(serviceModel=None, suiteLocals=None, caseLocals=None, parameters
         serviceModel.increaseExtraCaseApisCount(apiInvokedCount)
 
 
+# def AddHeaders(serviceModel=None, suiteLocals=None, caseLocals=None, parameters=None):
+#     client = caseLocals['Client']
+#     if client is None:
+#         logger.warning('AddHeaders: client is None')
+#         raise ValueError('AddHeaders: client is None')
+#     if parameters is None or isinstance(parameters, dict):
+#         logger.warning('AddHeaders: parameters not a dict')
+#         raise ValueError("AddHeaders: parameters not a dict")
+#
+#     def beforeSendEmitter(request, **kwargs):
+#         for k, v in parameters.items():
+#             request.headers[k] = v
+#
+#     client.meta.emitter.registr('request-created', beforeSendEmitter)
+
+
 predefinedFuncDict = {
     'DeleteObjects': DropObjects,
     'DropAllBuckets': DropAllBuckets,
