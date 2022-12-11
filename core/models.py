@@ -32,7 +32,7 @@ _ = urllib.parse
 
 
 class ServiceTestModel:
-    def __init__(self, serviceName, suiteFiles, identities, clientConfig, includePatterns, excludePatterns, hideEnabled, xmindSuites, concurrency=5, customHeaders=None):
+    def __init__(self, serviceName, suiteFiles, identities, clientConfig, includePatterns, excludePatterns, hideEnabled, xmindSuites, concurrency=5, customHeaders=None, autoClean=False):
         self.serviceName = serviceName
         self.suiteFiles = suiteFiles
         self.identities = identities
@@ -54,6 +54,7 @@ class ServiceTestModel:
         self.extra_case_api_invoked_count_lock = threading.Lock()
         self.threadPool = ThreadPoolExecutor(max_workers=concurrency)
         self.customHeaders = customHeaders
+        self.autoClean = autoClean
 
     def increaseExtraCaseApisCount(self, increment):
         with self.extra_case_api_invoked_count_lock:
@@ -74,12 +75,12 @@ class ServiceTestModel:
                 GLOBAL_VARIABLES[f'{identityName}_{prop}'] = identityConfig[prop]
             try:
                 clientConfig = copy.deepcopy(self.clientConfig)
+                for prop in const.CLIENT_PROPERTIES:
+                    if prop in identityConfig:
+                        clientConfig[prop] = identityConfig[prop]
                 if identityName == const.ANONYMOUS:
-                    serviceClient = newAnonymousClient(self.serviceName)
+                    serviceClient = newAnonymousClient(self.serviceName, clientConfig)
                 else:
-                    for prop in const.CLIENT_PROPERTIES:
-                        if prop in identityConfig:
-                            clientConfig[prop] = identityConfig[prop]
                     serviceClient = newAwsClient(self.serviceName, clientConfig)
                 serviceClient.supportOperations = serviceClient.meta.service_model.operation_names
 
@@ -119,40 +120,40 @@ class ServiceTestModel:
             return
         for suiteFile, suiteModel in filteredSuites.items():
             for suite in suiteModel:
-                suiteId = next(self.idGenerator)
-                self.submitTask(self.doRun, f'_{suiteId}_{self.serviceName}', suite, GLOBAL_VARIABLES.copy())
+                if suite:
+                    suiteId = suite[0][const.SUITE_ID]
+                    self.submitTask(self.doRun, f'{suiteId}', suite, GLOBAL_VARIABLES.copy())
 
     def filterSuites(self):
         filteredSuites = self.suiteModels
         if self.suiteIncludePatterns or self.suiteExcludePatterns:
             filteredSuites = {}
-            for suiteFile, suiteModel in self.suiteModels.items():
-                filteredSuites[suiteFile] = []
+            for suiteModelName, suiteModel in self.suiteModels.items():
+                filteredSuites[suiteModelName] = []
+                suiteModelCounter = itertools.count(1)
                 for suite in suiteModel:
-                    fullPath = suiteFile
-                    midPath = suiteFile
-                    for case in suite:
-                        caseName = case[const.CASE_TITLE] if const.CASE_TITLE in case else case[const.CASE_OPERATION] if const.CASE_OPERATION in case else None
-                        fullPath = '%s::%s' % (fullPath, caseName)
-                        if not (const.HIDE in case and case[const.HIDE]):
-                            midPath = '%s::%s' % (midPath, caseName)
+                    suiteId = '__%s__@%s@__%d__' % (self.serviceName, suiteModelName, next(suiteModelCounter))
+                    if suite:
+                        suite[0][const.SUITE_ID] = suiteId
+                    pathList = getSuitePath(suite)
+                    pathList.append(suiteId)
                     includePatternMatch = True
                     if self.suiteIncludePatterns:
                         includePatternMatch = False
-                        for suitePath in [fullPath, midPath]:
+                        for suitePath in list(pathList):
                             for includePattern in self.suiteIncludePatterns:
                                 if not includePatternMatch and includePattern.match(suitePath):
                                     includePatternMatch = True
                                     break
                     excludePatternMatch = False
                     if self.suiteExcludePatterns:
-                        for suitePath in [fullPath, midPath]:
+                        for suitePath in list(pathList):
                             for excludePattern in self.suiteExcludePatterns:
                                 if not excludePatternMatch and excludePattern.match(suitePath):
                                     excludePatternMatch = True
                                     break
                     if includePatternMatch and not excludePatternMatch:
-                        filteredSuites[suiteFile].append(suite)
+                        filteredSuites[suiteModelName].append(suite)
                     else:
                         self.suite_skipped.append(suite)
         return filteredSuites
@@ -166,23 +167,30 @@ class ServiceTestModel:
         return title
 
     def doRun(self, suiteId, suite, suiteLocals):
+        autoClean = self.autoClean
         suiteExecPath = suiteId
         try:
             for case in suite:
-                suiteExecPath = self.runCase(case, suiteExecPath, suiteLocals, suite)
+                suiteExecPath, terminate = self.runCase(case, suiteExecPath, suiteLocals, suite, suiteId)
+                if terminate:
+                    return
             self.suite_pass.append(suite)
-        except:
-            pass
+        except Exception as e:
+            logger.exception(e)
+            # autoClean = False
         finally:
-            self.runCase({
-                "operation": "DropBucket",
-                "clientName": "admin",
-                "parameters": {
-                    "Bucket": "${Bucket}"
-                },
-            }, "*** drop bucket ***", suiteLocals, None)
+            if autoClean:
+                self.runCase({
+                    "operation": "DropBucket",
+                    "clientName": "admin",
+                    "parameters": {
+                        "Bucket": "${Bucket}"
+                    },
+                    const.HIDE: False
+                }, "*** drop bucket ***", suiteLocals, None, suiteId)
 
-    def runCase(self, case, suiteExecPath, suiteLocals, suite):
+    def runCase(self, case, suiteExecPath, suiteLocals, suite, suiteId):
+        terminate = False
         caseName = case[const.CASE_TITLE] if const.CASE_TITLE in case else case[const.CASE_OPERATION]
         currentSuiteExecPath = f'{suiteExecPath}::{caseName}'
         ignore = self.hideEnabled and const.HIDE in case and case[const.HIDE]
@@ -245,29 +253,28 @@ class ServiceTestModel:
 
             # log response
             if not ignore:
-                logger.debug(f"{f'{clientName}@' if clientName else ''}{currentSuiteExecPath} ==> req:{json.dumps(parameters, default=IgnoreNotSerializable)}, resp: {caseResponse}")
+                logger.debug(f"{f'{clientName}@' if clientName else ''}{currentSuiteExecPath} ==> req[{operationName}]:{json.dumps(parameters, default=IgnoreNotSerializable)}, resp: {caseResponse}")
 
             case[const.CASE_SUCCESS] = True
-            return suiteExecPath
         except Exception as e:
-            if const.CASE_ASSERTION in case and 'ResponseMetadata' in caseResponse and 'HTTPStatusCode' in (responseMetadata := caseResponse['ResponseMetadata']):
-                case[const.CASE_TITLE] = '%s-%s' % (caseName, responseMetadata['HTTPStatusCode'])
-
+            terminate = True
             if suite is not None:
                 self.suite_failed.append(suite)
+
             case[const.CASE_SUCCESS] = False
             case[const.ERROR_INFO] = f'{e.__class__.__name__}({json.dumps(e.args, default=IgnoreNotSerializable)})'
             if caseResponse:
                 case[const.CASE_RESPONSE] = caseResponse
-
+                if const.CASE_ASSERTION in case and 'ResponseMetadata' in caseResponse and 'HTTPStatusCode' in (responseMetadata := caseResponse['ResponseMetadata']):
+                    case[const.CASE_TITLE] = '%s-%s' % (caseName, responseMetadata['HTTPStatusCode'])
             logger.error(f"{f'{clientName}@' if clientName else ''}{currentSuiteExecPath}\n"
                          f"### req[{operationName}] ### {json.dumps(parameters, default=IgnoreNotSerializable)}\n"
                          f"### resp ### {json.dumps(caseResponse, default=IgnoreNotSerializable)}\n")
+
             if isinstance(e, AssertionError):
-                logger.error(e)
+                logger.error('{}->{}', suiteId, e)
             else:
-                logger.exception(e)
-            raise e
+                logger.exception('{}->{}', suiteId, e)
         finally:
             resetHooks = caseLocals[const.RESET_HOOKS]
             for hook in resetHooks:
@@ -275,6 +282,7 @@ class ServiceTestModel:
                     hook()
                 except Exception as e:
                     logger.exception("Exception while resetting hooks: {}", e)
+            return suiteExecPath, terminate
 
 
 def initServicesTestModels(config, includePatterns, excludePatterns):
@@ -292,9 +300,14 @@ def initServicesTestModels(config, includePatterns, excludePatterns):
     testsDir = "./tests"
     if 'tests_dir' in config:
         testsDir = config['tests_dir']
+
     if 'global_variables' in config:
         global GLOBAL_VARIABLES
         GLOBAL_VARIABLES.update(config['global_variables'])
+
+    autoClean = False
+    if 'auto_clean' in config and config['auto_clean']:
+        autoClean = True
 
     if not os.path.exists(testsDir) or not os.path.isdir(testsDir):
         raise RuntimeError('tests dir must be a directory', testsDir)
@@ -320,6 +333,9 @@ def initServicesTestModels(config, includePatterns, excludePatterns):
                 if serviceName not in xmindSuites:
                     xmindSuites[serviceName] = []
                 xmindSuites[serviceName].extend(serviceSuite)
+    # export to yaml
+    exportYaml(xmindSuites)
+
     # load yaml files
     serviceYamlFiles = {}
     if const.LOAD_YAML_SUITES in config and config[const.LOAD_YAML_SUITES]:
@@ -341,8 +357,18 @@ def initServicesTestModels(config, includePatterns, excludePatterns):
         serviceModels[serviceName] = ServiceTestModel(serviceName,
                                                       serviceYamlFiles[serviceName] if serviceName in serviceYamlFiles else None,
                                                       identities, clientConfig, includePatterns, excludePatterns, hideEnabled,
-                                                      xmindSuites[serviceName] if serviceName in xmindSuites else None, concurrency, customHeaders)
+                                                      xmindSuites[serviceName] if serviceName in xmindSuites else None, concurrency, customHeaders, autoClean)
     return serviceModels
+
+
+def exportYaml(result):
+    for serviceName, data in result.items():
+        exportYamlPath = f'.wd/tests/suites/{serviceName}'
+        logger.info('exportYaml to: {}', exportYamlPath)
+        if not os.path.exists(exportYamlPath):
+            os.makedirs(exportYamlPath, exist_ok=True)
+        with open(f'{exportYamlPath}/integration_tests.yaml', 'w') as fp:
+            yaml.dump(data, fp)
 
 
 def parseSuite(parentSuites: [], suites: (dict, list) = None, hideSub=False):
@@ -409,6 +435,16 @@ def parseSuite(parentSuites: [], suites: (dict, list) = None, hideSub=False):
     return resultSuites
 
 
+def getSuitePath(suite):
+    fullPath, midPath = '', ''
+    for case in suite:
+        caseName = case[const.CASE_TITLE] if const.CASE_TITLE in case else case[const.CASE_OPERATION] if const.CASE_OPERATION in case else None
+        fullPath = '%s::%s' % (fullPath, caseName)
+        if not (const.HIDE in case and case[const.HIDE]):
+            midPath = '%s::%s' % (midPath, caseName)
+    return [fullPath, midPath]
+
+
 def reportResult(serviceModels):
     summary = {}
     for serviceName, serviceModel in serviceModels.items():
@@ -460,6 +496,7 @@ def reportResult(serviceModels):
                   f"API_INVOKED: {apiInvokedCount}]"
 
         if suiteFailedCount:
+            logger.debug("failed suites ids: {}", [suite[0][const.SUITE_ID] for suite in serviceModel.suite_failed if suite])
             logger.error(message)
         else:
             logger.info(message)

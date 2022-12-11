@@ -138,23 +138,15 @@ def loadXmindData(path):
                             serviceSuites = []
                             parseTopics(path=serviceName, suites=serviceSuites, topics=topics)
                             if len(serviceSuites) > 0:
-                                result[serviceName] = serviceSuites
-        exportYaml(result)
+                                if serviceName in result:
+                                    result[serviceName].extend(serviceSuites)
+                                else:
+                                    result[serviceName] = serviceSuites
         # postProcess(result)
         return result
     finally:
         if zf is not None:
             zf.close()
-
-
-def exportYaml(result):
-    for serviceName, data in result.items():
-        exportYamlPath = f'.wd/tests/suites/{serviceName}'
-        logger.info('exportYaml to: {}', exportYamlPath)
-        if not os.path.exists(exportYamlPath):
-            os.makedirs(exportYamlPath, exist_ok=True)
-        with open(f'{exportYamlPath}/integration_tests.yaml', 'w') as fp:
-            yaml.dump(data, fp)
 
 
 def postProcess(result):

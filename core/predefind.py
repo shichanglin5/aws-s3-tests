@@ -117,18 +117,18 @@ predefinedFuncDict = {
 }
 
 defaultClientConfig = {
-    'connect_timeout': 5,
-    'read_timeout': 10,
+    'connect_timeout': 15,
+    'read_timeout': 60,
     'retries': {
         'max_attempts': 2, 'mode': 'standard'
     }
 }
 
 
-def newAnonymousClient(serviceName):
+def newAnonymousClient(serviceName, clientConfig):
     configOptions = deepcopy(defaultClientConfig)
     configOptions['signature_version'] = UNSIGNED
-    return boto3.client(service_name=serviceName, use_ssl=False, verify=False, config=S3Config(**configOptions))
+    return boto3.client(serviceName, **clientConfig, config=S3Config(**configOptions))
 
 
 def newAwsClient(serviceName, clientConfig):

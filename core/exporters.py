@@ -16,6 +16,7 @@ class Exporter:
         self.filePath = determineFilePath(filePath=config['file_path'] if 'file_path' in config else None, ext=fileExtension)
         self.includeFields = config[const.INCLUDE_FIELDS] if const.INCLUDE_FIELDS in config else []
         self.summary = summary
+        self.clearTreeNode = const.CLEAR_TREE_NODE in config and config[const.CLEAR_TREE_NODE]
 
     def generateReport(self, serviceModels: {str, ServiceModel}):
         try:
@@ -41,7 +42,7 @@ def determineFilePath(filePath=None, file='aws_tests', ext="file"):
             file = a
         if b:
             ext = b[1:]
-    if os.path.exists(finalPath := os.path.abspath(f'{path}/{file}.{ext}')):
+    if os.path.exists(finalPath := os.path.abspath(f'{path}/{file}_.{ext}')):
         fileOrdinal = itertools.count(1)
         while os.path.exists(finalPath := os.path.abspath(f'{path}/{file}_{next(fileOrdinal)}.{ext}')):
             continue
@@ -82,7 +83,10 @@ class XmindExporter(Exporter):
             # logger.info(json.dumps(serviceModel.suite_pass))
             hideEnabled = serviceModel.hideEnabled
             self.appendTopicsAggs(subTopics, hideEnabled, 'PASS', serviceModel.suite_pass, "#15831C", False)
-            self.appendTopics(subTopics, hideEnabled, 'FAILED', serviceModel.suite_failed, "#E32C2D", False)
+            if len(serviceModel.suite_failed) > 5:
+                self.appendTopicsAggs(subTopics, hideEnabled, 'FAILED', serviceModel.suite_failed, "#E32C2D", False)
+            else:
+                self.appendTopics(subTopics, hideEnabled, 'FAILED', serviceModel.suite_failed, "#E32C2D", False)
             self.appendTopicsAggs(subTopics, hideEnabled, 'SKIPPED', serviceModel.suite_skipped, "#D0D0D0", True)
             content.append(sheet)
         return content
@@ -150,6 +154,8 @@ class XmindExporter(Exporter):
                     mid = midTree[key]
                     midTree, midNodes, midData = mid[var_tree], mid[var_nodes], mid[var_data]
                     clearNotes = not caseSkipped and not caseFailed
+                    if not self.clearTreeNode:
+                        continue
                     if clearNotes and var_notes in midData:
                         del midData[var_notes]
                     if var_parent in mid:

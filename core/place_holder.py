@@ -13,9 +13,9 @@ def resolvePlaceholderDict(parameters, context):
     if parameters is None or len(parameters) == 0:
         return
     for k, v in parameters.items():
-        if isinstance(v, dict) and dict:
+        if isinstance(v, dict):
             resolvePlaceholderDict(v, context)
-        elif isinstance(v, list) and len(v):
+        elif isinstance(v, list):
             resolvePlaceHolderArr(v, context)
         elif isinstance(v, str):
             originalValue = v
@@ -31,7 +31,7 @@ def resolvePlaceholderDict(parameters, context):
         elif isinstance(v, numbers.Number):
             continue
         else:
-            raise RuntimeError(f'Unsupported parameter: {v}')
+            raise ValueError(f'Unsupported parameter: {v}')
 
 
 def resolvePlaceHolderArr(valueArray, context):

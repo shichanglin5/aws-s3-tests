@@ -20,6 +20,7 @@ ANONYMOUS = 'anonymous'
 INCLUDE_FIELDS = 'include_fields'
 SUITE_LOCALS = 'suiteLocals'
 SUITE_FILTERS = 'suite_filters'
+SUITE_ID = 'suite_id'
 INCLUDES = 'includes'
 EXCLUDES = 'excludes'
 
@@ -31,7 +32,7 @@ XMIND_SUITES = 'xmind_indices'
 LOAD_XMIND_SUITES = 'load_xmind_suites'
 LOAD_YAML_SUITES = 'load_yaml_suites'
 EQUALS_IN_SIZE = '__equals_in_size__'
-
+CLEAR_TREE_NODE = 'clear_tree_node'
 
 CLIENT_PROPERTIES = ['service_name', 'region_name', 'api_version', 'use_ssl', 'verify', 'endpoint_url',
                      'aws_access_key_id', 'aws_secret_access_key', 'aws_session_token', 'config']
