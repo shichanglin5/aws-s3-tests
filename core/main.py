@@ -10,7 +10,9 @@ from core.loader import loadConfig
 from core.models import initServicesTestModels, reportResult
 
 
-def parseFilterPatterns(args: [] = None):
+from typing import List
+
+def parseFilterPatterns(args: List = None):
     if not args:
         return [], []
     includePatterns = []
@@ -30,10 +32,13 @@ def parseFilterPatterns(args: [] = None):
     return includePatterns, excludePatterns
 
 
-def main(args: []):
+from typing import List
+
+def main(args: List[str]):
     start = time()
 
     config = loadConfig()
+
     includePatterns, excludePatterns = parseFilterPatterns(args)
     sms = initServicesTestModels(config, includePatterns, excludePatterns)
     if len(sms) == 0:

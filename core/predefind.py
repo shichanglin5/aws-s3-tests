@@ -60,6 +60,9 @@ def DropBucket(serviceModel=None, suiteLocals=None, caseLocals=None, parameters=
         return response
     except ClientError as e:
         return e.response
+    finally:
+        # time.sleep(2)
+        pass
 
 
 def DropObjects(serviceModel=None, suiteLocals=None, caseLocals=None, parameters=None):

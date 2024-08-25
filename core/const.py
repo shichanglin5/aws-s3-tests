@@ -15,6 +15,7 @@ ORDER = '__order__'
 SUITE_STATE_START = 1
 SUITE_STATE_SKIPPED = 1 << 1
 EXPORTERS = 'exporters'
+EXPORT_SUITES= "export_suites"
 ERROR_INFO = 'errorInfo'
 ANONYMOUS = 'anonymous'
 INCLUDE_FIELDS = 'include_fields'

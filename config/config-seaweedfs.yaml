@@ -1,0 +1,40 @@
+concurrency: 100
+tests_dir: "suites"
+auto_clean: true
+custom_headers:
+  x-seaweedfs-destination: "/buckets/aws-tests"
+load_xmind_suites: true
+load_yaml_suites: false
+export_suites: true
+client_config:
+  region_name: "ap-southeast-1"
+  endpoint_url: "http://localhost:8333"
+identities:
+  admin:
+    account_id: "admin"
+    aws_access_key_id: "AKIARVTQO2DJNBALAG2Y"
+    aws_secret_access_key: "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"
+  anonymous:
+    account_id: "anonymous"
+global_variables:
+  group_all_users_url: "http://acs.amazonaws.com/groups/global/AllUsers"
+  group_authenticated_users_url: "http://acs.amazonaws.com/groups/global/AuthenticatedUsers"
+exporters:
+  xmind:
+    file_path: .wd/xmind_exports/aws_tests.xmind
+    include_fields:
+      ["errorInfo", "parameters", "assertion", "suiteLocals", "response"]
+    clear_tree_node: false
+hide_enabled: true
+suite_filters:
+  includes:
+    - '__s3__@xmind_indices@__62__'
+    # - '.*Ownership-BucketOwnerEnforced.*'
+    # - '.*Ownership-BucketOwnerPreferred.*'
+    # - '.*Ownership-ObjectWriter.*'
+  excludes:
+    # - '.*'
+    # - '.*DropAllBuckets.*'
+    # - '.*ListObjectVersions.*'
+    # - '.*DropBucket.*'
+    # - '.*MixedEntry.*'

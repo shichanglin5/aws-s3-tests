@@ -1,0 +1,18 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "test-seaweedfs",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "core.main",
+            "console": "integratedTerminal",
+            "env": {
+                "aws_config": ".wd/config/config-seaweedfs.yaml",
+                "LOGURU_LEVEL": "INFO"
+            },
+            "justMyCode": true,
+            "python": "/opt/homebrew/bin/python3.9",
+        }
+    ]
+}

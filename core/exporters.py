@@ -82,9 +82,9 @@ class XmindExporter(Exporter):
             sheet, subTopics = createSheet(serviceName, self.summary[serviceName])
             # logger.info(json.dumps(serviceModel.suite_pass))
             hideEnabled = serviceModel.hideEnabled
-            self.appendTopicsAggs(subTopics, hideEnabled, 'PASS', serviceModel.suite_pass, "#15831C", False)
+            self.appendTopicsAggs(subTopics, hideEnabled, 'PASS', serviceModel.suite_pass, "#15831C", True)
             if len(serviceModel.suite_failed) > 5:
-                self.appendTopicsAggs(subTopics, hideEnabled, 'FAILED', serviceModel.suite_failed, "#E32C2D", False)
+                self.appendTopicsAggs(subTopics, hideEnabled, 'FAILED', serviceModel.suite_failed, "#E32C2D", True)
             else:
                 self.appendTopics(subTopics, hideEnabled, 'FAILED', serviceModel.suite_failed, "#E32C2D", False)
             self.appendTopicsAggs(subTopics, hideEnabled, 'SKIPPED', serviceModel.suite_skipped, "#D0D0D0", True)

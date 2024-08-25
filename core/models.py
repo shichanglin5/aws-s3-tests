@@ -132,10 +132,12 @@ class ServiceTestModel:
                 filteredSuites[suiteModelName] = []
                 suiteModelCounter = itertools.count(1)
                 for suite in suiteModel:
+                    # 1、生成 suiteId，格式为 __服务名__@suiteModelName@__序号__
                     suiteId = '__%s__@%s@__%d__' % (self.serviceName, suiteModelName, next(suiteModelCounter))
                     if suite:
                         suite[0][const.SUITE_ID] = suiteId
                     pathList = getSuitePath(suite)
+                    # 2、将 suiteID 添加到 pathList 中，这样后续可以直接复制 suiteID 进行过滤
                     pathList.append(suiteId)
                     includePatternMatch = True
                     if self.suiteIncludePatterns:
@@ -168,7 +170,7 @@ class ServiceTestModel:
 
     def doRun(self, suiteId, suite, suiteLocals):
         autoClean = self.autoClean
-        suiteExecPath = suiteId
+        suiteExecPath = ''
         try:
             for case in suite:
                 suiteExecPath, terminate = self.runCase(case, suiteExecPath, suiteLocals, suite, suiteId)
@@ -187,12 +189,12 @@ class ServiceTestModel:
                         "Bucket": "${Bucket}"
                     },
                     const.HIDE: False
-                }, "*** drop bucket ***", suiteLocals, None, suiteId)
+                }, "AutoClean", suiteLocals, None, suiteId)
 
     def runCase(self, case, suiteExecPath, suiteLocals, suite, suiteId):
         terminate = False
         caseName = case[const.CASE_TITLE] if const.CASE_TITLE in case else case[const.CASE_OPERATION]
-        currentSuiteExecPath = f'{suiteExecPath}::{caseName}'
+        currentSuiteExecPath = f'{suiteExecPath}::{caseName}' if suiteExecPath else caseName
         ignore = self.hideEnabled and const.HIDE in case and case[const.HIDE]
         parameters = {}
 
@@ -253,7 +255,7 @@ class ServiceTestModel:
 
             # log response
             if not ignore:
-                logger.debug(f"{f'{clientName}@' if clientName else ''}{currentSuiteExecPath} ==> req[{operationName}]:{json.dumps(parameters, default=IgnoreNotSerializable)}, resp: {caseResponse}")
+                logger.debug(f"{currentSuiteExecPath} ==> req[{operationName}]:{json.dumps(parameters, default=IgnoreNotSerializable)}, resp: {caseResponse}")
 
             case[const.CASE_SUCCESS] = True
         except Exception as e:
@@ -267,7 +269,7 @@ class ServiceTestModel:
                 case[const.CASE_RESPONSE] = caseResponse
                 if const.CASE_ASSERTION in case and 'ResponseMetadata' in caseResponse and 'HTTPStatusCode' in (responseMetadata := caseResponse['ResponseMetadata']):
                     case[const.CASE_TITLE] = '%s-%s' % (caseName, responseMetadata['HTTPStatusCode'])
-            logger.error(f"{f'{clientName}@' if clientName else ''}{currentSuiteExecPath}\n"
+            logger.error(f"{suiteId}->{currentSuiteExecPath}\n"
                          f"### req[{operationName}] ### {json.dumps(parameters, default=IgnoreNotSerializable)}\n"
                          f"### resp ### {json.dumps(caseResponse, default=IgnoreNotSerializable)}\n")
 
@@ -297,9 +299,9 @@ def initServicesTestModels(config, includePatterns, excludePatterns):
     if 'custom_headers' in config:
         customHeaders = config['custom_headers']
 
-    testsDir = "./tests"
+    suitesDir = "suites"
     if 'tests_dir' in config:
-        testsDir = config['tests_dir']
+        suitesDir = config['tests_dir']
 
     if 'global_variables' in config:
         global GLOBAL_VARIABLES
@@ -309,8 +311,8 @@ def initServicesTestModels(config, includePatterns, excludePatterns):
     if 'auto_clean' in config and config['auto_clean']:
         autoClean = True
 
-    if not os.path.exists(testsDir) or not os.path.isdir(testsDir):
-        raise RuntimeError('tests dir must be a directory', testsDir)
+    if not os.path.exists(suitesDir) or not os.path.isdir(suitesDir):
+        raise RuntimeError('tests dir must be a directory', suitesDir)
 
     if const.SUITE_FILTERS in config and (suiteFilters := config[const.SUITE_FILTERS]):
         if const.INCLUDES in suiteFilters and (includes := suiteFilters[const.INCLUDES]):
@@ -324,9 +326,10 @@ def initServicesTestModels(config, includePatterns, excludePatterns):
 
     serviceModels = {}
     # load xmind cases
+    # 加载 suites 目录下的所有 xmind 文件
     xmindSuites = {}
     if const.LOAD_XMIND_SUITES in config and config[const.LOAD_XMIND_SUITES] and \
-            (xmindFiles := [xmindFile for file in os.listdir(testsDir) if (xmindFile := os.path.join(testsDir, file)) and os.path.isfile(xmindFile) and file.endswith('.xmind')]) and xmindFiles:
+            (xmindFiles := [xmindFile for file in os.listdir(suitesDir) if (xmindFile := os.path.join(suitesDir, file)) and os.path.isfile(xmindFile) and file.endswith('.xmind')]) and xmindFiles:
         for xmindFile in xmindFiles:
             servicesSuites = loadXmindData(xmindFile)
             for serviceName, serviceSuite in servicesSuites.items():
@@ -334,16 +337,20 @@ def initServicesTestModels(config, includePatterns, excludePatterns):
                     xmindSuites[serviceName] = []
                 xmindSuites[serviceName].extend(serviceSuite)
     # export to yaml
-    exportYaml(xmindSuites)
-
+    # 导出到 .wd/tests/suites/{serviceName}/integration_tests.yaml
+    if const.EXPORT_SUITES in config and config[const.EXPORT_SUITES]:
+        exportYaml(suitesDir, xmindSuites)
+    
     # load yaml files
+    # 加载 suites 字目录，子目录为服务名，按服务名加载 yaml 文件
+    # eg: suites/s3/xxx.xmind
     serviceYamlFiles = {}
     if const.LOAD_YAML_SUITES in config and config[const.LOAD_YAML_SUITES]:
-        for serviceName in os.listdir(testsDir):
-            if not os.path.isdir(os.path.join(testsDir, serviceName)):
+        for serviceName in os.listdir(suitesDir):
+            if not os.path.isdir(os.path.join(suitesDir, serviceName)):
                 continue
             suiteFiles = []
-            serviceDir = os.path.join(testsDir, serviceName)
+            serviceDir = os.path.join(suitesDir, serviceName)
             for testFile in os.listdir(serviceDir):
                 filePath = os.path.join(serviceDir, testFile)
                 if os.path.isfile(filePath) and testFile.endswith(".yaml"):
@@ -361,9 +368,9 @@ def initServicesTestModels(config, includePatterns, excludePatterns):
     return serviceModels
 
 
-def exportYaml(result):
+def exportYaml(suitesDir, result):
     for serviceName, data in result.items():
-        exportYamlPath = f'.wd/tests/suites/{serviceName}'
+        exportYamlPath = f'{suitesDir}/exports/{serviceName}'
         logger.info('exportYaml to: {}', exportYamlPath)
         if not os.path.exists(exportYamlPath):
             os.makedirs(exportYamlPath, exist_ok=True)
@@ -434,14 +441,18 @@ def parseSuite(parentSuites: [], suites: (dict, list) = None, hideSub=False):
         resultSuites.extend(midSuites)
     return resultSuites
 
-
+# 生成测试用例的路径，可以用来标识该用例
+# suite 表示一个完整的 case 集合，每个 case 是一个api调用
+# fullPath => ::Ownership-BucketOwnerEnforced::DropBucket::ACL-None::CreateBucket::OwnershipControls::Admin::GetBucketOwnershipControls::PutBucketOwnershipControls-ObjectWriter::GetBucketOwnershipControls
+# midPath => ::Ownership-BucketOwnerEnforced::ACL-None::CreateBucket::OwnershipControls::Admin::GetBucketOwnershipControls::PutBucketOwnershipControls-ObjectWriter::GetBucketOwnershipControls
 def getSuitePath(suite):
     fullPath, midPath = '', ''
     for case in suite:
         caseName = case[const.CASE_TITLE] if const.CASE_TITLE in case else case[const.CASE_OPERATION] if const.CASE_OPERATION in case else None
-        fullPath = '%s::%s' % (fullPath, caseName)
+        fullPath = '%s::%s' % (fullPath, caseName) if fullPath else caseName
+        # 如果节点配置为隐藏（__hide__属性为true）则从 midPath 中排除
         if not (const.HIDE in case and case[const.HIDE]):
-            midPath = '%s::%s' % (midPath, caseName)
+            midPath = '%s::%s' % (midPath, caseName) if midPath else caseName
     return [fullPath, midPath]
 
 
